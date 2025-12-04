@@ -1,23 +1,50 @@
 # feedparser
-The XML parser that converts saved podcast feeds into intermediary files for SQL ingestion.
+The XML parser that converts saved podcast feeds into intermediary files for SQL ingestion.  This is a community coding project.  PR's are highly encouraged.  All contributors will be recognized here for their work.
 
 This project is for the next-gen feed parser for the Podcast Index.  The parser has two jobs:  extract data from a podcast XML feed saved on the file system and write the channel and item data to individual files for them to be picked up later by the database ingester.
 
-Input file format:  XML (RSS 2.0)
-Output channel file format:  JSON 
-Output item file format:  JSON
+- Input file format:  XML (RSS 2.0) with 4 header lines from [Aggrivator](https://github.com/Podcastindex-org/aggrivator)
+- Output channel file format:  JSON encoded representation of SQL INSERT data in the newsfeeds table
+- Output item file format:  JSON encoded representation of SQL INSERT data in the nfitems table
 
 The code is Rust and uses a streaming XML parser in order to be as fast as it can.  Fast, parallel processing of input files is the goal.
 
 This binary will be part of the larger aggregator process chain:
-- Aggrivator (the feed polling agent)
+- [Aggrivator](https://github.com/Podcastindex-org/aggrivator) (the feed polling agent)
 - Feedparser (this project)
-- SQL ingestor agent (runs on each aggregator)
-- Queue server (accepts objects from the SQL ingestor agents)
-- SQL execution agent (picks object off the queue server and puts them in the database)
+- SQL ingestor agent (runs on each aggregator) - to be built
+- Queue server (accepts objects from the SQL ingestor agents) - to be built
+- SQL execution agent (picks object off the queue server and puts them in the database) - to be built
 
-# Note
-This is a community coding project.  PR's are highly encouraged.  All contributors will be recognized here for their work.
+## Input file format
+The input file format is a simple 4-line header followed by the XML payload.  The header lines are:
+1. Unix timestamp of Last-Modified (or 0 if not available)
+2. ETag header (or [[NO_ETAG]])
+3. XML feed URL
+4. Unix timestamp of when the XML was downloaded by Aggrivator
+
+## Output channel file format
+The output channel file format is a JSON object with the following fields:
+- feed_id:  the feed_id from the input file name pattern (e.g. [feed id]_[http response code].txt)
+- title:  the channel title
+- link:  the channel link
+- description:  the channel description
+
+## Output item file format
+The output item file format is a JSON object with the following fields:
+- feed_id:  the feed_id from the input file name pattern (e.g. [feed id]_[http response code].txt)
+- title:  the item title
+- link:  the item link
+- description:  the item description
+- pub_date:  the item pub date (ISO 8601 format)
+- itunes_image:  the item itunes:image URL (if available)
+- podcast_funding_url:  the item podcast:funding URL (if available)
+- podcast_funding_text:  the item podcast:funding text (if available)
+
+## Sample data
+Sample input and output files are available in the [sample_inputs](sample_inputs) and [sample_outputs](sample_outputs) directories. The files from the sample_inputs directory 
+can be moved into the [inputs](inputs) directory to be processed for testing.
+
 
 # Contributors
-- Dave Jones (gh: @daveajones)
+- Dave Jones (gh: [@daveajones](https://github.com/daveajones))

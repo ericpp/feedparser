@@ -3,14 +3,14 @@ use std::io::{BufRead, BufReader, Read};
 use std::io::Cursor;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH, Instant};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use xml::reader::{EventReader, XmlEvent};
 
 // Global counter initialized to zero at program start
-static global_counter: AtomicUsize = AtomicUsize::new(0);
+static GLOBAL_COUNTER: AtomicUsize = AtomicUsize::new(0);
 // Per-run output subfolder based on startup UNIX timestamp
 static OUTPUT_SUBDIR: OnceLock<PathBuf> = OnceLock::new();
 
@@ -199,7 +199,7 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
         }
 
         // Compute counter (1-based) and build filename
-        let counter_val = global_counter.fetch_add(1, Ordering::Relaxed) + 1;
+        let counter_val = GLOBAL_COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
         let fid_for_name = feed_id
             .map(|v| v.to_string())
             .unwrap_or_else(|| "NULL".to_string());
@@ -381,7 +381,7 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
                     }
 
                     // Compute counter (1-based) and build filename
-                    let counter_val = global_counter.fetch_add(1, Ordering::Relaxed) + 1;
+                    let counter_val = GLOBAL_COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
                     let fid_for_name = feed_id
                         .map(|v| v.to_string())
                         .unwrap_or_else(|| "NULL".to_string());
@@ -444,7 +444,7 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
                     }
 
                     // Compute counter (1-based) and build filename
-                    let counter_val = global_counter.fetch_add(1, Ordering::Relaxed) + 1;
+                    let counter_val = GLOBAL_COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
                     let fid_for_name = feed_id
                         .map(|v| v.to_string())
                         .unwrap_or_else(|| "NULL".to_string());
