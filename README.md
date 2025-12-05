@@ -12,7 +12,7 @@ The code is Rust and uses a streaming XML parser in order to be as fast as it ca
 This binary will be part of the larger aggregator process chain:
 - [Aggrivator](https://github.com/Podcastindex-org/aggrivator) (the feed polling agent)
 - Feedparser (this project)
-- SQL ingestor agent (runs on each aggregator) - to be built
+- SQL statement builder (runs on each aggregator) - to be built
 - Queue server (accepts objects from the SQL ingestor agents) - to be built
 - SQL execution agent (picks object off the queue server and puts them in the database) - to be built
 

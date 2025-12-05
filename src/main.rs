@@ -254,6 +254,7 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
     // Parse the XML document
     for event in parser {
         match event {
+            //A tag is opened.
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 current_element = name.local_name.clone();
                 if current_element == "channel" {
@@ -323,6 +324,8 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
                     }
                 }
             }
+
+            //Text is found.
             Ok(XmlEvent::Characters(data)) => {
                 if in_item {
                     match current_element.as_str() {
@@ -346,6 +349,8 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
                     }
                 }
             }
+
+            //A tag is closed.
             Ok(XmlEvent::EndElement { name }) => {
                 // Close channel <image> scope
                 if name.local_name == "image" && in_channel_image {
@@ -434,7 +439,7 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
                         feed_id,
                     };
 
-                    // Use per-run outputs subfolder established at startup
+                    // Use a per-run outputs subfolder established at startup
                     let out_dir: PathBuf = OUTPUT_SUBDIR
                         .get()
                         .cloned()
@@ -463,6 +468,8 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
                     }
                 }
             }
+
+            //An error occurred.
             Err(e) => {
                 eprintln!("Error parsing XML: {}", e);
                 break;
