@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH, Instant};
 use serde::{Serialize, Deserialize};
 use serde_json::Value as JsonValue;
 use xml::reader::{EventReader, XmlEvent};
+use xml::name::OwnedName;
 
 mod parser_state;
 mod tags;
@@ -239,13 +240,34 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
     // Parser state holds all flags and accumulators used by handlers
     let mut state = ParserState::default();
 
+    fn get_prefixed_name(name: &OwnedName) -> String {
+        let prefix = name.prefix.clone();
+        let local_name = name.local_name.clone();
+
+        if (matches!(prefix.as_deref(), Some("itunes"))
+            || matches!(name.namespace.as_deref(), Some("http://www.itunes.com/dtds/podcast-1.0.dtd"))
+        ) {
+            format!("itunes:{}", local_name)
+        } else if (matches!(prefix.as_deref(), Some("podcast"))
+            || matches!(name.namespace.as_deref(), Some("https://podcastindex.org/namespace/1.0"))
+            || matches!(name.namespace.as_deref(), Some("http://podcastindex.org/namespace/1.0"))
+        ) {
+            format!("podcast:{}", local_name)
+        } else if prefix.is_some() {
+            format!("{}:{}", prefix.unwrap(), local_name)
+        } else {
+            local_name
+        }
+    }
+
     // Parse the XML document
     for event in parser {
         match event {
             //A tag is opened.
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
-                state.current_element = name.local_name.clone();
-                tags::dispatch_start(&name, &attributes, &mut state);
+                state.current_element = get_prefixed_name(&name);
+                let current = state.current_element.clone();
+                tags::dispatch_start(&current, &attributes, &mut state);
             }
 
             //Text is found.
@@ -262,7 +284,9 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
 
             //A tag is closed.
             Ok(XmlEvent::EndElement { name }) => {
-                tags::dispatch_end(&name, feed_id, &mut state);
+                state.current_element = get_prefixed_name(&name);
+                let current = state.current_element.clone();
+                tags::dispatch_end(&current, feed_id, &mut state);
             }
 
             //An error occurred.
@@ -594,6 +618,7 @@ https://example.com/feed.xml
 <title>Test Feed</title>
 <item>
     <title>Complete Episode</title>
+    <itunes:title>Itunes Episode Title</itunes:title>
     <link>https://example.com/ep1</link>
     <description>Episode description</description>
     <pubDate>Mon, 01 Jan 2024 12:00:00 GMT</pubDate>
