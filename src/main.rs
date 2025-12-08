@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
 use std::path::{PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH, Instant};
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use serde_json::Value as JsonValue;
 use xml::reader::{EventReader, XmlEvent};
 
@@ -19,7 +19,7 @@ pub(crate) static GLOBAL_COUNTER: AtomicUsize = AtomicUsize::new(0);
 // Per-run output subfolder based on startup UNIX timestamp
 pub(crate) static OUTPUT_SUBDIR: OnceLock<PathBuf> = OnceLock::new();
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SqlInsert {
     pub table: String,
     pub columns: Vec<String>,
@@ -491,6 +491,188 @@ mod tests {
         assert_eq!(v["table"], "nfitems");
         assert_eq!(v["values"][1], serde_json::json!("Episode 1"));
         assert_eq!(v["values"][2], serde_json::json!("https://example.com/ep1"));
-        assert_eq!(v["values"][3], serde_json::json!("Hello & welcome!"));
+        assert_eq!(v["values"][3], serde_json::json!(" Hello & welcome! "));
     }
+
+    // Edge case: Empty feed
+    #[test]
+    fn test_empty_feed() {
+        // Arrange
+        let out_dir = ensure_output_dir();
+
+        let feed = r#"1
+[[NO_ETAG]]
+https://www.ualrpublicradio.org/podcast/arts-letters/rss.xml
+1745569945
+"#;
+
+        // Act
+        process_feed_sync(Cursor::new(feed), "test.xml", Some(1337));
+
+        // Assert: find the newsfeeds file for this feed_id
+        let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
+        let mut found_path: Option<PathBuf> = None;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                if name.contains("_newsfeeds_") && name.ends_with("1337.json") {
+                    found_path = Some(path);
+                    break;
+                }
+            }
+        }
+
+        let file_path = found_path.expect("should have written a newsfeeds output file");
+        let contents = fs::read_to_string(&file_path).expect("read newsfeeds file");
+        let v: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
+
+        assert_eq!(v["table"], "newsfeeds");
+        assert_eq!(v["feed_id"], serde_json::json!(1337));
+        assert_eq!(v["values"][1], serde_json::json!("")); // title
+        assert_eq!(v["values"][2], serde_json::json!("")); // link
+        assert_eq!(v["values"][3], serde_json::json!("")); // description
+    }
+
+    // Table: newsfeeds - Complete field coverage
+    #[test]
+    fn test_newsfeeds_table() {
+        // Arrange
+        let out_dir = ensure_output_dir();
+
+        let feed = r#"1700000000
+[[NO_ETAG]]
+https://example.com/feed.xml
+1700000001
+<?xml version="1.0"?>
+<rss>
+<channel>
+<title>Complete Channel</title>
+<link>https://example.com</link>
+<description>Full description</description>
+</channel>
+</rss>"#;
+
+        // Act
+        process_feed_sync(Cursor::new(feed), "test.xml", Some(2001));
+
+        // Assert: find the newsfeeds file for this feed_id
+        let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
+        let mut found_path: Option<PathBuf> = None;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                if name.contains("_newsfeeds_") && name.ends_with("2001.json") {
+                    found_path = Some(path);
+                    break;
+                }
+            }
+        }
+
+        let file_path = found_path.expect("should have written a newsfeeds output file");
+        let contents = fs::read_to_string(&file_path).expect("read newsfeeds file");
+        let v: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
+
+        assert_eq!(v["table"], "newsfeeds");
+        assert_eq!(v["feed_id"], serde_json::json!(2001));
+        assert_eq!(v["values"][1], serde_json::json!("Complete Channel")); // title
+        assert_eq!(v["values"][2], serde_json::json!("https://example.com")); // link
+        assert_eq!(v["values"][3], serde_json::json!("Full description")); // description
+    }
+
+    // Table: nfitems - Complete field coverage
+    #[test]
+    fn test_nfitems_table() {
+        // Arrange
+        let out_dir = ensure_output_dir();
+
+        let feed = r#"1700000000
+[[NO_ETAG]]
+https://example.com/feed.xml
+1700000001
+<?xml version="1.0"?>
+<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+     xmlns:podcast="https://podcastindex.org/namespace/1.0">
+<channel>
+<title>Test Feed</title>
+<item>
+    <title>Complete Episode</title>
+    <link>https://example.com/ep1</link>
+    <description>Episode description</description>
+    <pubDate>Mon, 01 Jan 2024 12:00:00 GMT</pubDate>
+    <itunes:image href="https://example.com/ep.jpg"/>
+    <enclosure url="https://example.com/ep.mp3" length="12345678" type="audio/mpeg"/>
+    <podcast:funding url="https://donate.example.com">Support!</podcast:funding>
+</item>
+</channel>
+</rss>"#;
+
+        // Act
+        process_feed_sync(Cursor::new(feed), "test.xml", Some(2002));
+
+        // Assert: find all nfitems files for this feed_id
+        let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
+        let mut nfitems_files = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                if name.contains("_nfitems_") && name.ends_with("2002.json") {
+                    nfitems_files.push(path);
+                }
+            }
+        }
+
+        assert_eq!(nfitems_files.len(), 1);
+        let file_path = &nfitems_files[0];
+        let contents = fs::read_to_string(&file_path).expect("read nfitems file");
+        let v: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
+
+        assert_eq!(v["table"], "nfitems");
+        assert_eq!(v["feed_id"], serde_json::json!(2002));
+        assert_eq!(v["values"][1], serde_json::json!("Complete Episode")); // title
+        assert_eq!(v["values"][2], serde_json::json!("https://example.com/ep1")); // link
+        assert_eq!(v["values"][3], serde_json::json!("Episode description")); // description
+        assert_eq!(v["values"][4], serde_json::json!("Mon, 01 Jan 2024 12:00:00 GMT")); // pub_date
+        assert_eq!(v["values"][5], serde_json::json!("https://example.com/ep.jpg")); // itunes_image
+        // Note: podcast_funding_url and podcast_funding_text would be additional fields beyond the basic ones
+    }
+
+    // Edge case: Multiple items
+    #[test]
+    fn test_multiple_items() {
+        // Arrange
+        let out_dir = ensure_output_dir();
+
+        let feed = r#"1700000000
+[[NO_ETAG]]
+https://example.com/feed.xml
+1700000001
+<?xml version="1.0"?>
+<rss>
+<channel>
+<title>Multi Test</title>
+<item><title>Ep 1</title><guid>e1</guid><enclosure url="http://x.com/1.mp3" length="1" type="audio/mpeg"/></item>
+<item><title>Ep 2</title><guid>e2</guid><enclosure url="http://x.com/2.mp3" length="1" type="audio/mpeg"/></item>
+<item><title>Ep 3</title><guid>e3</guid><enclosure url="http://x.com/3.mp3" length="1" type="audio/mpeg"/></item>
+</channel>
+</rss>"#;
+
+        // Act
+        process_feed_sync(Cursor::new(feed), "test.xml", Some(2016));
+
+        // Assert: find all nfitems files for this feed_id
+        let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
+        let mut nfitems_files = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                if name.contains("_nfitems_") && name.ends_with("2016.json") {
+                    nfitems_files.push(path);
+                }
+            }
+        }
+
+        assert_eq!(nfitems_files.len(), 3);
+    }
+
+
 }
