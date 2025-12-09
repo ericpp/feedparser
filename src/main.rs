@@ -302,20 +302,18 @@ mod tests {
         let base = std::env::temp_dir();
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis())
+            .map(|d| d.as_nanos())
             .unwrap_or(0);
+        // Use high-resolution timestamp (nanoseconds) to minimize collision risk
         let dir = base.join(format!("feedparser_test_{}", ts));
         let _ = fs::create_dir_all(&dir);
         dir
     }
 
     fn ensure_output_dir() -> PathBuf {
-        if let Some(existing) = OUTPUT_SUBDIR.get() {
-            return existing.clone();
-        }
-        let dir = unique_temp_dir();
-        let _ = OUTPUT_SUBDIR.set(dir.clone());
-        dir
+        // Use get_or_init to atomically ensure only one directory is created
+        // This prevents race conditions where parallel tests create different directories
+        OUTPUT_SUBDIR.get_or_init(|| unique_temp_dir()).clone()
     }
 
     #[test]
