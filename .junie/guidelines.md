@@ -86,6 +86,10 @@ To add support for a new XML element:
 - The async `main` function enumerates input files and executes parsing on a blocking thread via `tokio::task::spawn_blocking`.
 - Parsing is streaming/event-based using `xml-rs` and accumulates text only for relevant tags.
 
+## When coding with LLM's
+- AI agents should write an overview of all changes made to a new markdown file in the .llm_history directory.
+- AI agents should modify the .junie/guidelines.md file to reflect any changes made to the project.
+
 ## Submission Checklist for Changes
 - If code was modified:
   - Build succeeds: `cargo build`.
