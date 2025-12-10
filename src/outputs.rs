@@ -157,6 +157,7 @@ pub fn write_nfitems(state: &ParserState, feed_id: Option<i64>) {
     } else {
         state.title.trim().to_string()
     };
+
     let final_description = if !state.itunes_summary.trim().is_empty() {
         state.itunes_summary.trim().to_string()
     } else if !state.description.is_empty() {
@@ -164,17 +165,22 @@ pub fn write_nfitems(state: &ParserState, feed_id: Option<i64>) {
     } else {
         state.content_encoded.trim().to_string()
     };
+
     let final_title = utils::truncate_str(&final_title, 1024);
     let duration_secs = utils::parse_itunes_duration(state.itunes_duration.trim());
+
+    let season_num = utils::parse_numeric_token(state.itunes_season.trim());
     let mut episode_num = utils::parse_numeric_token(state.itunes_episode.trim());
+
     if episode_num > 1_000_000 {
         episode_num = 1_000_000;
     }
-    let season_num = utils::parse_numeric_token(state.itunes_season.trim());
+
     let mut enclosure_length_num = state.enclosure_length.trim().parse::<i64>().unwrap_or(0);
     if enclosure_length_num > 922_337_203_685_477_580 {
         enclosure_length_num = 0;
     }
+
     let final_enclosure_type = utils::truncate_str(state.enclosure_type.trim(), 128);
     let final_guid = utils::truncate_str(state.guid.trim(), 740);
 
