@@ -53,7 +53,10 @@ pub fn parse_numeric_token(raw: &str) -> i32 {
     if digits.is_empty() {
         0
     } else {
-        digits.parse::<i32>().unwrap_or(0)
+        let parsed = digits.parse::<i64>().unwrap_or(i64::MAX);
+        parsed
+            .clamp(i32::MIN as i64, i32::MAX as i64)
+            as i32
     }
 }
 

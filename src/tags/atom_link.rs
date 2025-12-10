@@ -26,6 +26,12 @@ pub fn on_start(current_element: &str, attributes: &[OwnedAttribute], state: &mu
         }
     }
 
+    if state.in_item && rel == "alternate" && !href.is_empty() && state.link.is_empty() {
+        state.link = href.clone();
+    } else if state.in_channel && !state.in_item && rel == "alternate" && !href.is_empty() && state.channel_link.is_empty() {
+        state.channel_link = href.clone();
+    }
+
     // Handle item-level enclosure links
     if state.in_item && rel == "enclosure" && !href.is_empty() {
         // Only use the first enclosure (skip if already set)

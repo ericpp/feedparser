@@ -68,11 +68,15 @@ pub fn write_newsfeeds(state: &ParserState, feed_id: Option<i64>) {
     if final_owner.is_empty() && state.channel_podcast_locked == 1 {
         final_owner = state.channel_itunes_owner_email.trim().to_string();
     }
+    let final_owner = utils::truncate_str(&final_owner, 255);
+
+    let final_title = utils::truncate_str(state.channel_title.trim(), 768);
+    let final_language = utils::truncate_str(state.channel_language.trim(), 8);
 
     let chash = utils::md5_hex_from_parts(&[
-        state.channel_title.trim(),
+        &final_title,
         state.channel_link.trim(),
-        state.channel_language.trim(),
+        &final_language,
         state.channel_generator.trim(),
         state.channel_itunes_author.trim(),
         state.channel_itunes_owner_name.trim(),
@@ -111,10 +115,10 @@ pub fn write_newsfeeds(state: &ParserState, feed_id: Option<i64>) {
         ],
         values: vec![
             match feed_id { Some(v) => JsonValue::from(v), None => JsonValue::Null },
-            JsonValue::from(state.channel_title.trim().to_string()),
+            JsonValue::from(final_title),
             JsonValue::from(state.channel_link.trim().to_string()),
             JsonValue::from(final_description),
-            JsonValue::from(state.channel_language.trim().to_string()),
+            JsonValue::from(final_language),
             JsonValue::from(state.channel_generator.trim().to_string()),
             JsonValue::from(state.channel_itunes_author.trim().to_string()),
             JsonValue::from(state.channel_itunes_owner_name.trim().to_string()),
@@ -160,11 +164,19 @@ pub fn write_nfitems(state: &ParserState, feed_id: Option<i64>) {
     } else {
         state.content_encoded.trim().to_string()
     };
+    let final_title = utils::truncate_str(&final_title, 1024);
     let duration_secs = utils::parse_itunes_duration(state.itunes_duration.trim());
-    let episode_num = utils::parse_numeric_token(state.itunes_episode.trim());
+    let mut episode_num = utils::parse_numeric_token(state.itunes_episode.trim());
+    if episode_num > 1_000_000 {
+        episode_num = 1_000_000;
+    }
     let season_num = utils::parse_numeric_token(state.itunes_season.trim());
-    let enclosure_length_num = state.enclosure_length.trim().parse::<i64>().unwrap_or(0);
-    let final_enclosure_type = state.enclosure_type.trim();
+    let mut enclosure_length_num = state.enclosure_length.trim().parse::<i64>().unwrap_or(0);
+    if enclosure_length_num > 922_337_203_685_477_580 {
+        enclosure_length_num = 0;
+    }
+    let final_enclosure_type = utils::truncate_str(state.enclosure_type.trim(), 128);
+    let final_guid = utils::truncate_str(state.guid.trim(), 740);
 
     let pub_date_ts = utils::parse_pub_date_to_unix(state.pub_date.trim()).unwrap_or_else(|| {
         state
@@ -204,7 +216,7 @@ pub fn write_nfitems(state: &ParserState, feed_id: Option<i64>) {
             JsonValue::from(pub_date_ts),
             JsonValue::from(state.itunes_image.trim().to_string()),
             JsonValue::from(final_item_image.trim().to_string()),
-            JsonValue::from(state.guid.trim().to_string()),
+            JsonValue::from(final_guid),
             JsonValue::from(duration_secs),
             JsonValue::from(episode_num),
             JsonValue::from(season_num),
