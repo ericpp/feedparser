@@ -36,6 +36,7 @@ pub mod podcast_soundbite;
 pub mod podcast_transcript;
 pub mod podcast_value;
 pub mod pub_date;
+pub mod content;
 pub mod title;
 pub mod url;
 
@@ -91,6 +92,7 @@ pub fn dispatch_text(current_element: &str, data: &str, state: &mut ParserState)
         "podcast:guid" => podcast_guid::on_text(data, state),
         "url" => url::on_text(data, state),
         "logo" => logo::on_text(data, state),
+        "content" => content::on_text(data, state),
         _ => {}
     }
 

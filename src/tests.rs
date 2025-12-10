@@ -2,6 +2,7 @@ use super::*;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Cursor;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use chrono::{DateTime, Duration, Utc};
 use serde_json::json;
@@ -35,6 +36,55 @@ fn get_value_from_record(v: &serde_json::Value, col_name: &str) -> Option<serde_
     None
 }
 
+fn sort_paths_by_numeric_prefix(paths: &mut Vec<PathBuf>) {
+    paths.sort_by(|a, b| {
+        let an = a.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        let bn = b.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        let anum = an.split('_').next().and_then(|s| s.parse::<u64>().ok());
+        let bnum = bn.split('_').next().and_then(|s| s.parse::<u64>().ok());
+        anum.cmp(&bnum).then_with(|| an.cmp(bn))
+    });
+}
+
+fn read_json_file(path: &Path) -> serde_json::Value {
+    let contents = fs::read_to_string(path).expect("read output file");
+    serde_json::from_str(&contents).expect("valid JSON output")
+}
+
+fn output_files_for(out_dir: &Path, table: &str, feed_id: i64) -> Vec<PathBuf> {
+    let suffix = format!("{feed_id}.json");
+    let needle = format!("_{table}_");
+    fs::read_dir(out_dir)
+        .expect("output directory should be readable")
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?.to_owned();
+            if name.contains(&needle) && name.ends_with(&suffix) {
+                Some(path)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn output_records(out_dir: &Path, table: &str, feed_id: i64) -> Vec<serde_json::Value> {
+    let mut files = output_files_for(out_dir, table, feed_id);
+    sort_paths_by_numeric_prefix(&mut files);
+    files.into_iter().map(|p| read_json_file(&p)).collect()
+}
+
+fn single_output_record(out_dir: &Path, table: &str, feed_id: i64) -> serde_json::Value {
+    let mut records = output_records(out_dir, table, feed_id);
+    assert_eq!(
+        records.len(),
+        1,
+        "expected one {table} record for feed {feed_id}"
+    );
+    records.remove(0)
+}
+
 #[test]
 fn writes_channel_title_to_newsfeeds_output() {
     // Arrange: ensure outputs directory is set once for all tests in this process
@@ -61,30 +111,13 @@ fn writes_channel_title_to_newsfeeds_output() {
         xml = xml
     );
 
-    let feed_id = Some(424242_i64);
+    let feed_id = 424242_i64;
 
     // Act: process the synthetic feed synchronously
-    process_feed_sync(Cursor::new(input.into_bytes()), "<test>", feed_id);
+    process_feed_sync(Cursor::new(input.into_bytes()), "<test>", Some(feed_id));
 
     // Assert: a newsfeeds JSON file exists with the expected title
-    let entries = fs::read_dir(&out_dir)
-        .expect("output directory should be readable");
-    let mut found_path: Option<PathBuf> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_newsfeeds_") && name.ends_with("424242.json") {
-                found_path = Some(path);
-                break;
-            }
-        }
-    }
-
-    let file_path = found_path.expect("should have written a newsfeeds output file");
-    let contents = fs::read_to_string(&file_path)
-        .expect("should be able to read newsfeeds file");
-    let v: serde_json::Value = serde_json::from_str(&contents)
-        .expect("valid JSON in newsfeeds file");
+    let v = single_output_record(&out_dir, "newsfeeds", feed_id);
 
     // Basic shape assertions
     assert_eq!(v["table"], "newsfeeds");
@@ -124,27 +157,13 @@ fn writes_channel_link_and_description_cdata() {
         xml = xml
     );
 
-    let feed_id = Some(777001_i64);
+    let feed_id = 777001_i64;
 
     // Act
-    process_feed_sync(Cursor::new(input.into_bytes()), "<test>", feed_id);
+    process_feed_sync(Cursor::new(input.into_bytes()), "<test>", Some(feed_id));
 
     // Assert: find the newsfeeds file for this feed_id
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut found_path: Option<PathBuf> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_newsfeeds_") && name.ends_with("777001.json") {
-                found_path = Some(path);
-                break;
-            }
-        }
-    }
-
-    let file_path = found_path.expect("should have written a newsfeeds output file");
-    let contents = fs::read_to_string(&file_path).expect("read newsfeeds file");
-    let v: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
+    let v = single_output_record(&out_dir, "newsfeeds", feed_id);
 
     assert_eq!(v["table"], "newsfeeds");
     assert_eq!(
@@ -192,27 +211,13 @@ fn writes_item_title_link_description_with_cdata() {
         xml = xml
     );
 
-    let feed_id = Some(777002_i64);
+    let feed_id = 777002_i64;
 
     // Act
-    process_feed_sync(Cursor::new(input.into_bytes()), "<test>", feed_id);
+    process_feed_sync(Cursor::new(input.into_bytes()), "<test>", Some(feed_id));
 
     // Assert: find the nfitems file for this feed_id
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut found_path: Option<PathBuf> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitems_") && name.ends_with("777002.json") {
-                found_path = Some(path);
-                break;
-            }
-        }
-    }
-
-    let file_path = found_path.expect("should have written an nfitems output file");
-    let contents = fs::read_to_string(&file_path).expect("read nfitems file");
-    let v: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
+    let v = single_output_record(&out_dir, "nfitems", feed_id);
 
     assert_eq!(v["table"], "nfitems");
     assert_eq!(v["values"][1], serde_json::json!("Episode 1"));
@@ -233,27 +238,14 @@ https://www.ualrpublicradio.org/podcast/arts-letters/rss.xml
 "#;
 
     // Act
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(1337));
+    let feed_id = 1337_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
     // Assert: find the newsfeeds file for this feed_id
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut found_path: Option<PathBuf> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_newsfeeds_") && name.ends_with("1337.json") {
-                found_path = Some(path);
-                break;
-            }
-        }
-    }
-
-    let file_path = found_path.expect("should have written a newsfeeds output file");
-    let contents = fs::read_to_string(&file_path).expect("read newsfeeds file");
-    let v: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
+    let v = single_output_record(&out_dir, "newsfeeds", feed_id);
 
     assert_eq!(v["table"], "newsfeeds");
-    assert_eq!(v["feed_id"], serde_json::json!(1337));
+    assert_eq!(v["feed_id"], serde_json::json!(feed_id));
     assert_eq!(get_value_from_record(&v, "title"), Some(serde_json::json!("")));
     assert_eq!(get_value_from_record(&v, "link"), Some(serde_json::json!("")));
     assert_eq!(get_value_from_record(&v, "description"), Some(serde_json::json!("")));
@@ -299,48 +291,23 @@ https://example.com/feed.xml
 </rss>"#;
 
     // Act
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2001));
+    let feed_id = 2001_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
     // Assert: find the newsfeeds file for this feed_id
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut found_path: Option<PathBuf> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_newsfeeds_") && name.ends_with("2001.json") {
-                found_path = Some(path);
-                break;
-            }
-        }
-    }
+    let nf = single_output_record(&out_dir, "newsfeeds", feed_id);
 
-    let file_path = found_path.expect("should have written a newsfeeds output file");
-    let contents = fs::read_to_string(&file_path).expect("read newsfeeds file");
-    let nf: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    // Helper to get value by column name
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = nf["columns"].as_array()?;
-        let values = nf["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value("feed_id"), Some(JsonValue::from(2001)));
-    assert_eq!(get_value("title"), Some(JsonValue::from("Complete Channel")));
-    assert_eq!(get_value("link"), Some(JsonValue::from("https://example.com")));
-    assert_eq!(get_value("description"), Some(JsonValue::from("Channel summary wins")));
-    assert_eq!(get_value("language"), Some(JsonValue::from("en-US")));
-    assert_eq!(get_value("itunes_author"), Some(JsonValue::from("Author Name")));
-    assert_eq!(get_value("itunes_owner_name"), Some(JsonValue::from("Owner Name")));
-    assert_eq!(get_value("explicit"), Some(JsonValue::from(1)));
-    assert_eq!(get_value("podcast_locked"), Some(JsonValue::from(1)));
-    assert_eq!(get_value("image"), Some(JsonValue::from("https://example.com/rss.jpg")));
-    assert_eq!(get_value("artwork_url_600"), Some(JsonValue::from("https://example.com/itunes.jpg")));
+    assert_eq!(get_value_from_record(&nf, "feed_id"), Some(JsonValue::from(feed_id)));
+    assert_eq!(get_value_from_record(&nf, "title"), Some(JsonValue::from("Complete Channel")));
+    assert_eq!(get_value_from_record(&nf, "link"), Some(JsonValue::from("https://example.com")));
+    assert_eq!(get_value_from_record(&nf, "description"), Some(JsonValue::from("Channel summary wins")));
+    assert_eq!(get_value_from_record(&nf, "language"), Some(JsonValue::from("en-US")));
+    assert_eq!(get_value_from_record(&nf, "itunes_author"), Some(JsonValue::from("Author Name")));
+    assert_eq!(get_value_from_record(&nf, "itunes_owner_name"), Some(JsonValue::from("Owner Name")));
+    assert_eq!(get_value_from_record(&nf, "explicit"), Some(JsonValue::from(1)));
+    assert_eq!(get_value_from_record(&nf, "podcast_locked"), Some(JsonValue::from(1)));
+    assert_eq!(get_value_from_record(&nf, "image"), Some(JsonValue::from("https://example.com/rss.jpg")));
+    assert_eq!(get_value_from_record(&nf, "artwork_url_600"), Some(JsonValue::from("https://example.com/itunes.jpg")));
 }
 
 // Table: newsfeeds - Hashes and item stats
@@ -389,34 +356,9 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(20100));
-
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut found_path: Option<PathBuf> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_newsfeeds_") && name.ends_with("20100.json") {
-                found_path = Some(path);
-                break;
-            }
-        }
-    }
-
-    let file_path = found_path.expect("should have written a newsfeeds output file");
-    let contents = fs::read_to_string(&file_path).expect("read newsfeeds file");
-    let nf: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = nf["columns"].as_array()?;
-        let values = nf["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
+    let feed_id = 20100_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
+    let nf = single_output_record(&out_dir, "newsfeeds", feed_id);
 
     // Expected chash (channel-level stable fields)
     let expected_chash = utils::md5_hex_from_parts(&[
@@ -451,11 +393,11 @@ https://example.com/feed.xml
     let newest = utils::parse_pub_date_to_unix("Tue, 02 Jan 2024 12:00:00 GMT").unwrap();
     let oldest = utils::parse_pub_date_to_unix("Mon, 01 Jan 2024 12:00:00 GMT").unwrap();
 
-    assert_eq!(get_value("item_count"), Some(JsonValue::from(2)));
-    assert_eq!(get_value("newest_item_pubdate"), Some(JsonValue::from(newest)));
-    assert_eq!(get_value("oldest_item_pubdate"), Some(JsonValue::from(oldest)));
-    assert_eq!(get_value("chash"), Some(JsonValue::from(expected_chash)));
-    assert_eq!(get_value("podcast_chapters"), Some(JsonValue::from(expected_item_hash)));
+    assert_eq!(get_value_from_record(&nf, "item_count"), Some(JsonValue::from(2)));
+    assert_eq!(get_value_from_record(&nf, "newest_item_pubdate"), Some(JsonValue::from(newest)));
+    assert_eq!(get_value_from_record(&nf, "oldest_item_pubdate"), Some(JsonValue::from(oldest)));
+    assert_eq!(get_value_from_record(&nf, "chash"), Some(JsonValue::from(expected_chash)));
+    assert_eq!(get_value_from_record(&nf, "podcast_chapters"), Some(JsonValue::from(expected_item_hash)));
 }
 
 // Table: nfitems - Complete field coverage
@@ -496,49 +438,27 @@ https://example.com/feed.xml
 </rss>"#;
 
     // Act
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2002));
+    let feed_id = 2002_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
     // Assert: find all nfitems files for this feed_id
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut nfitems_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitems_") && name.ends_with("2002.json") {
-                nfitems_files.push(path);
-            }
-        }
-    }
+    let mut items = output_records(&out_dir, "nfitems", feed_id);
+    assert_eq!(items.len(), 1);
+    let item = items.pop().unwrap();
 
-    assert_eq!(nfitems_files.len(), 1);
-    let file_path = &nfitems_files[0];
-    let contents = fs::read_to_string(file_path).expect("read nfitems file");
-    let item: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = item["columns"].as_array()?;
-        let values = item["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value("feed_id"), Some(JsonValue::from(2002)));
-    assert_eq!(get_value("title"), Some(JsonValue::from("Itunes Episode Title")));
-    assert_eq!(get_value("link"), Some(JsonValue::from("https://example.com/ep1")));
-    assert_eq!(get_value("description"), Some(JsonValue::from("Itunes summary wins")));
+    assert_eq!(get_value_from_record(&item, "feed_id"), Some(JsonValue::from(feed_id)));
+    assert_eq!(get_value_from_record(&item, "title"), Some(JsonValue::from("Itunes Episode Title")));
+    assert_eq!(get_value_from_record(&item, "link"), Some(JsonValue::from("https://example.com/ep1")));
+    assert_eq!(get_value_from_record(&item, "description"), Some(JsonValue::from("Itunes summary wins")));
     let expected_pub_date = utils::parse_pub_date_to_unix("Mon, 01 Jan 2024 12:00:00 GMT").unwrap();
-    assert_eq!(get_value("pub_date"), Some(JsonValue::from(expected_pub_date)));
-    assert_eq!(get_value("itunes_image"), Some(JsonValue::from("https://example.com/ep.jpg")));
-    assert_eq!(get_value("podcast_funding_url"), Some(JsonValue::from("https://donate.example.com")));
-    assert_eq!(get_value("podcast_funding_text"), Some(JsonValue::from("Support!")));
-    assert_eq!(get_value("itunes_episode"), Some(JsonValue::from(42)));
-    assert_eq!(get_value("itunes_season"), Some(JsonValue::from(3)));
-    assert_eq!(get_value("itunes_explicit"), Some(JsonValue::from(1)));
-    assert_eq!(get_value("enclosure_length"), Some(JsonValue::from(12345678)));
+    assert_eq!(get_value_from_record(&item, "pub_date"), Some(JsonValue::from(expected_pub_date)));
+    assert_eq!(get_value_from_record(&item, "image"), Some(JsonValue::from("https://example.com/ep.jpg")));
+    assert_eq!(get_value_from_record(&item, "podcast_funding_url"), Some(JsonValue::from("https://donate.example.com")));
+    assert_eq!(get_value_from_record(&item, "podcast_funding_text"), Some(JsonValue::from("Support!")));
+    assert_eq!(get_value_from_record(&item, "itunes_episode"), Some(JsonValue::from(42)));
+    assert_eq!(get_value_from_record(&item, "itunes_season"), Some(JsonValue::from(3)));
+    assert_eq!(get_value_from_record(&item, "itunes_explicit"), Some(JsonValue::from(1)));
+    assert_eq!(get_value_from_record(&item, "enclosure_length"), Some(JsonValue::from(12345678)));
 }
 
 // Table: nfguids
@@ -558,36 +478,12 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2003));
+    let feed_id = 2003_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut found_path: Option<PathBuf> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfguids_") && name.ends_with("2003.json") {
-                found_path = Some(path);
-                break;
-            }
-        }
-    }
+    let guid = single_output_record(&out_dir, "nfguids", feed_id);
 
-    let file_path = found_path.expect("should have written a nfguids output file");
-    let contents = fs::read_to_string(&file_path).expect("read nfguids file");
-    let guid: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = guid["columns"].as_array()?;
-        let values = guid["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value("guid"), Some(JsonValue::from("unique-guid-123")));
+    assert_eq!(get_value_from_record(&guid, "guid"), Some(JsonValue::from("unique-guid-123")));
 }
 
 // Table: nffunding
@@ -607,37 +503,13 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2004));
+    let feed_id = 2004_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut found_path: Option<PathBuf> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nffunding_") && name.ends_with("2004.json") {
-                found_path = Some(path);
-                break;
-            }
-        }
-    }
+    let funding = single_output_record(&out_dir, "nffunding", feed_id);
 
-    let file_path = found_path.expect("should have written a nffunding output file");
-    let contents = fs::read_to_string(&file_path).expect("read nffunding file");
-    let funding: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = funding["columns"].as_array()?;
-        let values = funding["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value("url"), Some(JsonValue::from("https://patreon.com/podcast")));
-    assert_eq!(get_value("message"), Some(JsonValue::from("Support us!")));
+    assert_eq!(get_value_from_record(&funding, "url"), Some(JsonValue::from("https://patreon.com/podcast")));
+    assert_eq!(get_value_from_record(&funding, "message"), Some(JsonValue::from("Support us!")));
 }
 
 // Table: pubsub
@@ -658,37 +530,13 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2005));
+    let feed_id = 2005_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut found_path: Option<PathBuf> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_pubsub_") && name.ends_with("2005.json") {
-                found_path = Some(path);
-                break;
-            }
-        }
-    }
+    let pubsub = single_output_record(&out_dir, "pubsub", feed_id);
 
-    let file_path = found_path.expect("should have written a pubsub output file");
-    let contents = fs::read_to_string(&file_path).expect("read pubsub file");
-    let pubsub: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = pubsub["columns"].as_array()?;
-        let values = pubsub["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value("hub_url"), Some(JsonValue::from("https://pubsubhubbub.appspot.com/")));
-    assert_eq!(get_value("self_url"), Some(JsonValue::from("https://example.com/feed.xml")));
+    assert_eq!(get_value_from_record(&pubsub, "hub_url"), Some(JsonValue::from("https://pubsubhubbub.appspot.com/")));
+    assert_eq!(get_value_from_record(&pubsub, "self_url"), Some(JsonValue::from("https://example.com/feed.xml")));
 }
 
 // Table: nfitem_transcripts - Including type detection
@@ -725,40 +573,17 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2006));
+    let feed_id = 2006_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
+    let transcripts = output_records(&out_dir, "nfitem_transcripts", feed_id);
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut transcripts_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitem_transcripts_") && name.ends_with("2006.json") {
-                transcripts_files.push(path);
-            }
-        }
-    }
-
-    assert_eq!(transcripts_files.len(), 3);
+    assert_eq!(transcripts.len(), 3);
 
     // Type detection: JSON=1, SRT=2, VTT=3
     // Verify each type appears once (order may vary)
     let mut types = Vec::new();
-    for file_path in &transcripts_files {
-        let contents = fs::read_to_string(file_path).expect("read transcript file");
-        let transcript: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-        
-        let get_value = |col_name: &str| -> Option<serde_json::Value> {
-            let columns = transcript["columns"].as_array()?;
-            let values = transcript["values"].as_array()?;
-            for (i, col) in columns.iter().enumerate() {
-                if col.as_str()? == col_name {
-                    return values.get(i).cloned();
-                }
-            }
-            None
-        };
-        
-        if let Some(type_val) = get_value("type") {
+    for transcript in &transcripts {
+        if let Some(type_val) = get_value_from_record(transcript, "type") {
             if let Some(t) = type_val.as_i64() {
                 types.push(t);
             }
@@ -792,36 +617,15 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2007));
+    let feed_id = 2007_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut chapters_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitem_chapters_") && name.ends_with("2007.json") {
-                chapters_files.push(path);
-            }
-        }
-    }
+    let mut chapters = output_records(&out_dir, "nfitem_chapters", feed_id);
 
-    assert_eq!(chapters_files.len(), 1);
-    let file_path = &chapters_files[0];
-    let contents = fs::read_to_string(file_path).expect("read chapters file");
-    let chapter: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
+    assert_eq!(chapters.len(), 1);
+    let chapter = chapters.pop().unwrap();
 
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = chapter["columns"].as_array()?;
-        let values = chapter["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value("url"), Some(JsonValue::from("https://example.com/chapters.json")));
+    assert_eq!(get_value_from_record(&chapter, "url"), Some(JsonValue::from("https://example.com/chapters.json")));
 }
 
 // Table: nfitem_soundbites - Including multiple per item
@@ -847,43 +651,16 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2008));
+    let feed_id = 2008_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut soundbites_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitem_soundbites_") && name.ends_with("2008.json") {
-                soundbites_files.push(path);
-            }
-        }
-    }
+    let soundbites = output_records(&out_dir, "nfitem_soundbites", feed_id);
 
-    soundbites_files.sort();
-    assert_eq!(soundbites_files.len(), 2);
+    assert_eq!(soundbites.len(), 2);
 
-    let mut soundbites = Vec::new();
-    for file_path in &soundbites_files {
-        let contents = fs::read_to_string(file_path).expect("read soundbite file");
-        let soundbite: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-        soundbites.push(soundbite);
-    }
-
-    let get_value = |sb: &serde_json::Value, col_name: &str| -> Option<serde_json::Value> {
-        let columns = sb["columns"].as_array()?;
-        let values = sb["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value(&soundbites[0], "title"), Some(JsonValue::from("Intro")));
-    assert_eq!(get_value(&soundbites[0], "start_time"), Some(JsonValue::from("10")));
-    assert_eq!(get_value(&soundbites[1], "title"), Some(JsonValue::from("Main topic")));
+    assert_eq!(get_value_from_record(&soundbites[0], "title"), Some(JsonValue::from("Intro")));
+    assert_eq!(get_value_from_record(&soundbites[0], "start_time"), Some(JsonValue::from("10")));
+    assert_eq!(get_value_from_record(&soundbites[1], "title"), Some(JsonValue::from("Main topic")));
 }
 
 // Table: nfitem_persons - Including multiple per item
@@ -909,44 +686,17 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2009));
+    let feed_id = 2009_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut persons_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitem_persons_") && name.ends_with("2009.json") {
-                persons_files.push(path);
-            }
-        }
-    }
+    let persons = output_records(&out_dir, "nfitem_persons", feed_id);
 
-    persons_files.sort();
-    assert_eq!(persons_files.len(), 2);
+    assert_eq!(persons.len(), 2);
 
-    let mut persons = Vec::new();
-    for file_path in &persons_files {
-        let contents = fs::read_to_string(file_path).expect("read person file");
-        let person: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-        persons.push(person);
-    }
-
-    let get_value = |p: &serde_json::Value, col_name: &str| -> Option<serde_json::Value> {
-        let columns = p["columns"].as_array()?;
-        let values = p["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value(&persons[0], "name"), Some(JsonValue::from("Alice")));
-    assert_eq!(get_value(&persons[0], "role"), Some(JsonValue::from("host")));
-    assert_eq!(get_value(&persons[1], "name"), Some(JsonValue::from("Bob")));
-    assert_eq!(get_value(&persons[1], "role"), Some(JsonValue::from("guest")));
+    assert_eq!(get_value_from_record(&persons[0], "name"), Some(JsonValue::from("Alice")));
+    assert_eq!(get_value_from_record(&persons[0], "role"), Some(JsonValue::from("host")));
+    assert_eq!(get_value_from_record(&persons[1], "name"), Some(JsonValue::from("Bob")));
+    assert_eq!(get_value_from_record(&persons[1], "role"), Some(JsonValue::from("guest")));
 }
 
 // Table: nfitem_value
@@ -974,36 +724,15 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2010));
+    let feed_id = 2010_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut values_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitem_value_") && name.ends_with("2010.json") {
-                values_files.push(path);
-            }
-        }
-    }
+    let mut values = output_records(&out_dir, "nfitem_value", feed_id);
 
-    assert_eq!(values_files.len(), 1);
-    let file_path = &values_files[0];
-    let contents = fs::read_to_string(file_path).expect("read nfitem_value file");
-    let value: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
+    assert_eq!(values.len(), 1);
+    let value = values.pop().unwrap();
 
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = value["columns"].as_array()?;
-        let values = value["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    let value_block_val = get_value("value_block").unwrap();
+    let value_block_val = get_value_from_record(&value, "value_block").unwrap();
     let value_block_str = value_block_val.as_str().unwrap();
     let value_block: JsonValue = serde_json::from_str(value_block_str).unwrap();
     assert_eq!(value_block["model"]["type"], "lightning");
@@ -1030,36 +759,15 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2011));
+    let feed_id = 2011_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut values_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfvalue_") && name.ends_with("2011.json") {
-                values_files.push(path);
-            }
-        }
-    }
+    let mut values = output_records(&out_dir, "nfvalue", feed_id);
 
-    assert_eq!(values_files.len(), 1);
-    let file_path = &values_files[0];
-    let contents = fs::read_to_string(file_path).expect("read nfvalue file");
-    let value: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
+    assert_eq!(values.len(), 1);
+    let value = values.pop().unwrap();
 
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = value["columns"].as_array()?;
-        let values = value["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    let value_block_val = get_value("value_block").unwrap();
+    let value_block_val = get_value_from_record(&value, "value_block").unwrap();
     let value_block_str = value_block_val.as_str().unwrap();
     let value_block: JsonValue = serde_json::from_str(value_block_str).unwrap();
     let destinations = value_block["destinations"].as_array().unwrap();
@@ -1092,36 +800,12 @@ https://example.com/feed.xml
 </channel>
 </rss>"#, recipients);
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2012));
+    let feed_id = 2012_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut found_path: Option<PathBuf> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfvalue_") && name.ends_with("2012.json") {
-                found_path = Some(path);
-                break;
-            }
-        }
-    }
+    let value = single_output_record(&out_dir, "nfvalue", feed_id);
 
-    let file_path = found_path.expect("should have written a nfvalue output file");
-    let contents = fs::read_to_string(&file_path).expect("read nfvalue file");
-    let value: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = value["columns"].as_array()?;
-        let values = value["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    let vb_val = get_value("value_block").unwrap();
+    let vb_val = get_value_from_record(&value, "value_block").unwrap();
     let vb_str = vb_val.as_str().unwrap();
     let vb: JsonValue = serde_json::from_str(vb_str).unwrap();
     assert_eq!(vb["destinations"].as_array().unwrap().len(), 100); // Capped at 100
@@ -1150,55 +834,18 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2014));
+    let feed_id = 2014_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut newsfeeds_path: Option<PathBuf> = None;
-    let mut nfitems_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_newsfeeds_") && name.ends_with("2014.json") {
-                newsfeeds_path = Some(path);
-            } else if name.contains("_nfitems_") && name.ends_with("2014.json") {
-                nfitems_files.push(path);
-            }
-        }
-    }
+    let nf = single_output_record(&out_dir, "newsfeeds", feed_id);
+    let nfitems = output_records(&out_dir, "nfitems", feed_id);
 
-    let nf_file = newsfeeds_path.expect("should have newsfeeds file");
-    let nf_contents = fs::read_to_string(&nf_file).expect("read newsfeeds file");
-    let nf: serde_json::Value = serde_json::from_str(&nf_contents).expect("valid JSON");
+    assert_eq!(get_value_from_record(&nf, "image"), Some(JsonValue::from("https://example.com/itunes-only.jpg")));
 
-    let get_nf_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = nf["columns"].as_array()?;
-        let values = nf["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
+    assert_eq!(nfitems.len(), 1);
+    let item = &nfitems[0];
 
-    assert_eq!(get_nf_value("image"), Some(JsonValue::from("https://example.com/itunes-only.jpg")));
-
-    assert_eq!(nfitems_files.len(), 1);
-    let item_contents = fs::read_to_string(&nfitems_files[0]).expect("read nfitems file");
-    let item: serde_json::Value = serde_json::from_str(&item_contents).expect("valid JSON");
-
-    let get_item_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = item["columns"].as_array()?;
-        let values = item["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_item_value("image"), Some(JsonValue::from("https://example.com/ep-itunes-only.jpg")));
+    assert_eq!(get_value_from_record(item, "image"), Some(JsonValue::from("https://example.com/ep-itunes-only.jpg")));
 }
 
 // Edge case: Episode/season parsing (extract numbers from strings)
@@ -1224,36 +871,15 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2015));
+    let feed_id = 2015_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut nfitems_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitems_") && name.ends_with("2015.json") {
-                nfitems_files.push(path);
-            }
-        }
-    }
+    let mut nfitems = output_records(&out_dir, "nfitems", feed_id);
+    assert_eq!(nfitems.len(), 1);
+    let item = nfitems.pop().unwrap();
 
-    assert_eq!(nfitems_files.len(), 1);
-    let item_contents = fs::read_to_string(&nfitems_files[0]).expect("read nfitems file");
-    let item: serde_json::Value = serde_json::from_str(&item_contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = item["columns"].as_array()?;
-        let values = item["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value("itunes_episode"), Some(JsonValue::from(10)));
-    assert_eq!(get_value("itunes_season"), Some(JsonValue::from(2)));
+    assert_eq!(get_value_from_record(&item, "itunes_episode"), Some(JsonValue::from(10)));
+    assert_eq!(get_value_from_record(&item, "itunes_season"), Some(JsonValue::from(2)));
 }
 
 // Edge case: Multiple items
@@ -1277,21 +903,12 @@ https://example.com/feed.xml
 </rss>"#;
 
     // Act
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2016));
+    let feed_id = 2016_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
     // Assert: find all nfitems files for this feed_id
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut nfitems_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitems_") && name.ends_with("2016.json") {
-                nfitems_files.push(path);
-            }
-        }
-    }
-
-    assert_eq!(nfitems_files.len(), 3);
+    let nfitems = output_records(&out_dir, "nfitems", feed_id);
+    assert_eq!(nfitems.len(), 3);
 }
 
 // Edge case: itunes:image as text content (channel and item)
@@ -1317,26 +934,15 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2017));
+    let feed_id = 2017_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut nfitems_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitems_") && name.ends_with("2017.json") {
-                nfitems_files.push(path);
-            }
-        }
-    }
-
-    assert_eq!(nfitems_files.len(), 1);
-    let file_path = &nfitems_files[0];
-    let contents = fs::read_to_string(&file_path).expect("read nfitems file");
-    let v: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
+    let mut nfitems = output_records(&out_dir, "nfitems", feed_id);
+    assert_eq!(nfitems.len(), 1);
+    let v = nfitems.pop().unwrap();
 
     assert_eq!(v["table"], "nfitems");
-    assert_eq!(v["feed_id"], serde_json::json!(2017));
+    assert_eq!(v["feed_id"], serde_json::json!(feed_id));
     assert_eq!(v["values"][5], serde_json::json!("https://example.com/ep-text.jpg")); // itunes_image
 
 }
@@ -1363,36 +969,12 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2018));
+    let feed_id = 2018_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut values_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfvalue_") && name.ends_with("2018.json") {
-                values_files.push(path);
-            }
-        }
-    }
+    let value = single_output_record(&out_dir, "nfvalue", feed_id);
 
-    assert_eq!(values_files.len(), 1);
-    let file_path = &values_files[0];
-    let contents = fs::read_to_string(file_path).expect("read nfvalue file");
-    let value: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = value["columns"].as_array()?;
-        let values = value["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    let vb_val = get_value("value_block").unwrap();
+    let vb_val = get_value_from_record(&value, "value_block").unwrap();
     let vb: JsonValue = serde_json::from_str(vb_val.as_str().unwrap()).unwrap();
     assert_eq!(vb["model"]["type"], "lightning");
     assert_eq!(vb["destinations"][0]["name"], "LN");
@@ -1422,36 +1004,12 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2019));
+    let feed_id = 2019_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut values_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitem_value_") && name.ends_with("2019.json") {
-                values_files.push(path);
-            }
-        }
-    }
+    let value = single_output_record(&out_dir, "nfitem_value", feed_id);
 
-    assert_eq!(values_files.len(), 1);
-    let file_path = &values_files[0];
-    let contents = fs::read_to_string(file_path).expect("read nfitem_value file");
-    let value: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = value["columns"].as_array()?;
-        let values = value["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    let vb_val = get_value("value_block").unwrap();
+    let vb_val = get_value_from_record(&value, "value_block").unwrap();
     let vb: JsonValue = serde_json::from_str(vb_val.as_str().unwrap()).unwrap();
     assert_eq!(vb["destinations"][0]["fee"], true);
 }
@@ -1480,29 +1038,16 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2020));
+    let feed_id = 2020_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut nfitems_count = 0;
-    let mut transcripts_count = 0;
-    let mut values_count = 0;
+    let nfitems = output_records(&out_dir, "nfitems", feed_id);
+    let transcripts = output_records(&out_dir, "nfitem_transcripts", feed_id);
+    let values = output_records(&out_dir, "nfitem_value", feed_id);
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitems_") && name.ends_with("2020.json") {
-                nfitems_count += 1;
-            } else if name.contains("_nfitem_transcripts_") && name.ends_with("2020.json") {
-                transcripts_count += 1;
-            } else if name.contains("_nfitem_value_") && name.ends_with("2020.json") {
-                values_count += 1;
-            }
-        }
-    }
-
-    assert_eq!(nfitems_count, 0);
-    assert_eq!(transcripts_count, 0);
-    assert_eq!(values_count, 0);
+    assert_eq!(nfitems.len(), 0);
+    assert_eq!(transcripts.len(), 0);
+    assert_eq!(values.len(), 0);
 }
 
 // Atom <link rel="enclosure"> should be treated as enclosure
@@ -1526,38 +1071,16 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2026));
+    let feed_id = 2026_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut nfitems_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitems_") && name.ends_with("2026.json") {
-                nfitems_files.push(path);
-            }
-        }
-    }
+    let mut nfitems = output_records(&out_dir, "nfitems", feed_id);
+    assert_eq!(nfitems.len(), 1);
+    let item = nfitems.pop().unwrap();
 
-    assert_eq!(nfitems_files.len(), 1);
-    let file_path = &nfitems_files[0];
-    let contents = fs::read_to_string(file_path).expect("read nfitems file");
-    let item: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = item["columns"].as_array()?;
-        let values = item["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value("enclosure_url"), Some(JsonValue::from("https://example.com/ep.mp3")));
-    assert_eq!(get_value("enclosure_length"), Some(JsonValue::from(555)));
-    assert_eq!(get_value("enclosure_type"), Some(JsonValue::from("audio/mpeg")));
+    assert_eq!(get_value_from_record(&item, "enclosure_url"), Some(JsonValue::from("https://example.com/ep.mp3")));
+    assert_eq!(get_value_from_record(&item, "enclosure_length"), Some(JsonValue::from(555)));
+    assert_eq!(get_value_from_record(&item, "enclosure_type"), Some(JsonValue::from("audio/mpeg")));
 }
 
 // itunes:explicit boolean true/false should be honored for channel and item
@@ -1583,55 +1106,18 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2027));
+    let feed_id = 2027_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut newsfeeds_path: Option<PathBuf> = None;
-    let mut nfitems_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_newsfeeds_") && name.ends_with("2027.json") {
-                newsfeeds_path = Some(path);
-            } else if name.contains("_nfitems_") && name.ends_with("2027.json") {
-                nfitems_files.push(path);
-            }
-        }
-    }
+    let nf = single_output_record(&out_dir, "newsfeeds", feed_id);
+    let nfitems = output_records(&out_dir, "nfitems", feed_id);
 
-    let nf_file = newsfeeds_path.expect("should have newsfeeds file");
-    let nf_contents = fs::read_to_string(&nf_file).expect("read newsfeeds file");
-    let nf: serde_json::Value = serde_json::from_str(&nf_contents).expect("valid JSON");
+    assert_eq!(get_value_from_record(&nf, "explicit"), Some(JsonValue::from(1)));
 
-    let get_nf_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = nf["columns"].as_array()?;
-        let values = nf["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
+    assert_eq!(nfitems.len(), 1);
+    let item = &nfitems[0];
 
-    assert_eq!(get_nf_value("explicit"), Some(JsonValue::from(1)));
-
-    assert_eq!(nfitems_files.len(), 1);
-    let item_contents = fs::read_to_string(&nfitems_files[0]).expect("read nfitems file");
-    let item: serde_json::Value = serde_json::from_str(&item_contents).expect("valid JSON");
-
-    let get_item_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = item["columns"].as_array()?;
-        let values = item["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_item_value("itunes_explicit"), Some(JsonValue::from(0)));
+    assert_eq!(get_value_from_record(item, "itunes_explicit"), Some(JsonValue::from(0)));
 }
 
 // Soundbite and person fields should be truncated to Partytime limits
@@ -1666,54 +1152,43 @@ https://example.com/feed.xml
 
     process_feed_sync(Cursor::new(feed), "test.xml", Some(2028));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut soundbites_files = Vec::new();
-    let mut persons_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitem_soundbites_") && name.ends_with("2028.json") {
-                soundbites_files.push(path);
-            } else if name.contains("_nfitem_persons_") && name.ends_with("2028.json") {
-                persons_files.push(path);
-            }
-        }
-    }
+    let soundbites = output_records(&out_dir, "nfitem_soundbites", 2028);
+    let persons = output_records(&out_dir, "nfitem_persons", 2028);
 
-    assert_eq!(soundbites_files.len(), 1);
-    let sb_contents = fs::read_to_string(&soundbites_files[0]).expect("read soundbite file");
-    let sb: serde_json::Value = serde_json::from_str(&sb_contents).expect("valid JSON");
-    let get_sb_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = sb["columns"].as_array()?;
-        let values = sb["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-    let sb_title = get_sb_value("title").unwrap().as_str().unwrap().to_string();
+    assert_eq!(soundbites.len(), 1);
+    let sb_title = get_value_from_record(&soundbites[0], "title")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
     assert_eq!(sb_title.len(), 500);
 
-    assert_eq!(persons_files.len(), 1);
-    let person_contents = fs::read_to_string(&persons_files[0]).expect("read person file");
-    let person: serde_json::Value = serde_json::from_str(&person_contents).expect("valid JSON");
-    let get_person_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = person["columns"].as_array()?;
-        let values = person["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-    let name = get_person_value("name").unwrap().as_str().unwrap().to_string();
-    let role = get_person_value("role").unwrap().as_str().unwrap().to_string();
-    let group = get_person_value("grp").unwrap().as_str().unwrap().to_string();
-    let img = get_person_value("img").unwrap().as_str().unwrap().to_string();
-    let href = get_person_value("href").unwrap().as_str().unwrap().to_string();
+    assert_eq!(persons.len(), 1);
+    let name = get_value_from_record(&persons[0], "name")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
+    let role = get_value_from_record(&persons[0], "role")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
+    let group = get_value_from_record(&persons[0], "grp")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
+    let img = get_value_from_record(&persons[0], "img")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
+    let href = get_value_from_record(&persons[0], "href")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
 
     assert_eq!(name.len(), 128);
     assert_eq!(role.len(), 128);
@@ -1746,38 +1221,14 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2021));
+    let feed_id = 2021_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut found_path: Option<PathBuf> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfcategories_") && name.ends_with("2021.json") {
-                found_path = Some(path);
-                break;
-            }
-        }
-    }
+    let catmap = single_output_record(&out_dir, "nfcategories", feed_id);
 
-    let file_path = found_path.expect("should have written a nfcategories output file");
-    let contents = fs::read_to_string(&file_path).expect("read nfcategories file");
-    let catmap: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = catmap["columns"].as_array()?;
-        let values = catmap["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value("catid1"), Some(JsonValue::from(102)));
-    assert_eq!(get_value("catid2"), Some(JsonValue::from(48)));
-    assert_eq!(get_value("catid3"), Some(JsonValue::from(52)));
+    assert_eq!(get_value_from_record(&catmap, "catid1"), Some(JsonValue::from(102)));
+    assert_eq!(get_value_from_record(&catmap, "catid2"), Some(JsonValue::from(48)));
+    assert_eq!(get_value_from_record(&catmap, "catid3"), Some(JsonValue::from(52)));
 }
 
 // First enclosure wins and type is guessed when missing
@@ -1802,38 +1253,16 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2022));
+    let feed_id = 2022_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut nfitems_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitems_") && name.ends_with("2022.json") {
-                nfitems_files.push(path);
-            }
-        }
-    }
+    let mut nfitems = output_records(&out_dir, "nfitems", feed_id);
+    assert_eq!(nfitems.len(), 1);
+    let item = nfitems.pop().unwrap();
 
-    assert_eq!(nfitems_files.len(), 1);
-    let file_path = &nfitems_files[0];
-    let contents = fs::read_to_string(file_path).expect("read nfitems file");
-    let item: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = item["columns"].as_array()?;
-        let values = item["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value("enclosure_url"), Some(JsonValue::from("https://example.com/first.mp3")));
-    assert_eq!(get_value("enclosure_type"), Some(JsonValue::from("audio/mpeg")));
-    assert_eq!(get_value("enclosure_length"), Some(JsonValue::from(123)));
+    assert_eq!(get_value_from_record(&item, "enclosure_url"), Some(JsonValue::from("https://example.com/first.mp3")));
+    assert_eq!(get_value_from_record(&item, "enclosure_type"), Some(JsonValue::from("audio/mpeg")));
+    assert_eq!(get_value_from_record(&item, "enclosure_length"), Some(JsonValue::from(123)));
 }
 
 // Truncation/clamp behavior should mirror partytime.js limits
@@ -1872,73 +1301,36 @@ https://example.com/feed.xml
         etype = long_type
     );
 
-    let feed_id = Some(30305_i64);
+    let feed_id = 30305_i64;
 
-    process_feed_sync(Cursor::new(feed), "clamp.xml", feed_id);
+    process_feed_sync(Cursor::new(feed), "clamp.xml", Some(feed_id));
 
-    let mut nfitems_path: Option<PathBuf> = None;
-    let mut newsfeeds_path: Option<PathBuf> = None;
-    for entry in fs::read_dir(&out_dir).expect("output directory should be readable").flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitems_") && name.ends_with("30305.json") {
-                nfitems_path = Some(path.clone());
-            } else if name.contains("_newsfeeds_") && name.ends_with("30305.json") {
-                newsfeeds_path = Some(path);
-            }
-        }
-    }
+    let item = single_output_record(&out_dir, "nfitems", feed_id);
+    let news = single_output_record(&out_dir, "newsfeeds", feed_id);
 
-    let nfitems_path = nfitems_path.expect("nfitems output should exist");
-    let newsfeeds_path = newsfeeds_path.expect("newsfeeds output should exist");
-
-    let item_contents = fs::read_to_string(&nfitems_path).expect("read nfitems file");
-    let item: serde_json::Value =
-        serde_json::from_str(&item_contents).expect("valid JSON in nfitems");
-    let get_item_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = item["columns"].as_array()?;
-        let values = item["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    let title = get_item_value("title").and_then(|v| v.as_str().map(|s| s.to_string())).unwrap();
+    let title = get_value_from_record(&item, "title")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap();
     assert_eq!(title.len(), 1024);
-    let guid = get_item_value("guid").and_then(|v| v.as_str().map(|s| s.to_string())).unwrap();
+    let guid = get_value_from_record(&item, "guid")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap();
     assert_eq!(guid.len(), 740);
-    let enclosure_type = get_item_value("enclosure_type")
+    let enclosure_type = get_value_from_record(&item, "enclosure_type")
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .unwrap();
     assert_eq!(enclosure_type.len(), 128);
-    assert_eq!(get_item_value("enclosure_length"), Some(JsonValue::from(0)));
+    assert_eq!(get_value_from_record(&item, "enclosure_length"), Some(JsonValue::from(0)));
     assert_eq!(
-        get_item_value("itunes_episode"),
+        get_value_from_record(&item, "itunes_episode"),
         Some(JsonValue::from(1_000_000))
     );
 
-    let news_contents = fs::read_to_string(&newsfeeds_path).expect("read newsfeeds file");
-    let news: serde_json::Value =
-        serde_json::from_str(&news_contents).expect("valid JSON in newsfeeds");
-    let get_news_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = news["columns"].as_array()?;
-        let values = news["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
     assert_eq!(
-        get_news_value("language"),
+        get_value_from_record(&news, "language"),
         Some(JsonValue::from("abcdefgh"))
     );
-    let owner_val = get_news_value("podcast_owner")
+    let owner_val = get_value_from_record(&news, "podcast_owner")
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .unwrap();
     assert_eq!(owner_val.len(), 255);
@@ -1968,34 +1360,9 @@ https://example.com/feed.xml
 
     process_feed_sync(Cursor::new(feed), "test.xml", Some(2023));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut nfitems_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitems_") && name.ends_with("2023.json") {
-                nfitems_files.push(path);
-            }
-        }
-    }
-
-    assert_eq!(nfitems_files.len(), 1);
-    let file_path = &nfitems_files[0];
-    let contents = fs::read_to_string(file_path).expect("read nfitems file");
-    let item: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = item["columns"].as_array()?;
-        let values = item["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value("itunes_duration"), Some(JsonValue::from(62)));
+    let nfitems = output_records(&out_dir, "nfitems", 2023);
+    assert_eq!(nfitems.len(), 1);
+    assert_eq!(get_value_from_record(&nfitems[0], "itunes_duration"), Some(JsonValue::from(62)));
 }
 
 // Value type should be mapped to numeric codes (HBD=1, bitcoin=2, lightning=0)
@@ -2025,51 +1392,14 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2024));
+    let feed_id = 2024_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut channel_values_files = Vec::new();
-    let mut item_values_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfvalue_") && name.ends_with("2024.json") {
-                channel_values_files.push(path);
-            } else if name.contains("_nfitem_value_") && name.ends_with("2024.json") {
-                item_values_files.push(path);
-            }
-        }
-    }
+    let channel_value = single_output_record(&out_dir, "nfvalue", feed_id);
+    let item_value = single_output_record(&out_dir, "nfitem_value", feed_id);
 
-    assert_eq!(channel_values_files.len(), 1);
-    let channel_value_contents = fs::read_to_string(&channel_values_files[0]).expect("read nfvalue file");
-    let channel_value: serde_json::Value = serde_json::from_str(&channel_value_contents).expect("valid JSON");
-    let get_channel_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = channel_value["columns"].as_array()?;
-        let values = channel_value["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-    assert_eq!(get_channel_value("type"), Some(JsonValue::from(2)));
-
-    assert_eq!(item_values_files.len(), 1);
-    let item_value_contents = fs::read_to_string(&item_values_files[0]).expect("read nfitem_value file");
-    let item_value: serde_json::Value = serde_json::from_str(&item_value_contents).expect("valid JSON");
-    let get_item_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = item_value["columns"].as_array()?;
-        let values = item_value["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-    assert_eq!(get_item_value("type"), Some(JsonValue::from(1)));
+    assert_eq!(get_value_from_record(&channel_value, "type"), Some(JsonValue::from(2)));
+    assert_eq!(get_value_from_record(&item_value, "type"), Some(JsonValue::from(1)));
 }
 
 // podcast:locked should fall back to itunes owner email when owner is missing
@@ -2097,37 +1427,13 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(2025));
+    let feed_id = 2025_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut found_path: Option<PathBuf> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_newsfeeds_") && name.ends_with("2025.json") {
-                found_path = Some(path);
-                break;
-            }
-        }
-    }
+    let nf = single_output_record(&out_dir, "newsfeeds", feed_id);
 
-    let file_path = found_path.expect("should have written a newsfeeds output file");
-    let contents = fs::read_to_string(&file_path).expect("read newsfeeds file");
-    let nf: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = nf["columns"].as_array()?;
-        let values = nf["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value("podcast_locked"), Some(JsonValue::from(1)));
-    assert_eq!(get_value("podcast_owner"), Some(JsonValue::from("owner@example.com")));
+    assert_eq!(get_value_from_record(&nf, "podcast_locked"), Some(JsonValue::from(1)));
+    assert_eq!(get_value_from_record(&nf, "podcast_owner"), Some(JsonValue::from("owner@example.com")));
 }
 
 // Update frequency should reflect recent publishing cadence and pub dates should be epoch seconds
@@ -2163,70 +1469,28 @@ https://example.com/feed.xml
 </channel>
 </rss>"#, rfc_now, rfc_recent);
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(30303));
+    let feed_id = 30303_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut newsfeeds_path: Option<PathBuf> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_newsfeeds_") && name.ends_with("30303.json") {
-                newsfeeds_path = Some(path);
-                break;
-            }
-        }
-    }
+    let nf = single_output_record(&out_dir, "newsfeeds", feed_id);
 
-    let nf_path = newsfeeds_path.expect("should have newsfeeds file");
-    let nf_contents = fs::read_to_string(&nf_path).expect("read newsfeeds file");
-    let nf: serde_json::Value = serde_json::from_str(&nf_contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = nf["columns"].as_array()?;
-        let values = nf["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value("item_count"), Some(JsonValue::from(2)));
+    assert_eq!(get_value_from_record(&nf, "item_count"), Some(JsonValue::from(2)));
     assert_eq!(
-        get_value("newest_item_pubdate"),
+        get_value_from_record(&nf, "newest_item_pubdate"),
         Some(JsonValue::from(now.timestamp()))
     );
     assert_eq!(
-        get_value("oldest_item_pubdate"),
+        get_value_from_record(&nf, "oldest_item_pubdate"),
         Some(JsonValue::from(recent.timestamp()))
     );
     // Two items within 5 days -> frequency bucket 1
-    assert_eq!(get_value("update_frequency"), Some(JsonValue::from(1)));
+    assert_eq!(get_value_from_record(&nf, "update_frequency"), Some(JsonValue::from(1)));
 
     // Verify nfitems pub_date fields are numeric epoch seconds
-    let mut nfitems_files = Vec::new();
-    for entry in fs::read_dir(&out_dir).expect("output directory should be readable").flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitems_") && name.ends_with("30303.json") {
-                nfitems_files.push(path);
-            }
-        }
-    }
-    assert_eq!(nfitems_files.len(), 2);
-    for file_path in nfitems_files {
-        let contents = fs::read_to_string(&file_path).expect("read nfitems file");
-        let item: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-        let columns = item["columns"].as_array().expect("columns array");
-        let values = item["values"].as_array().expect("values array");
-        let mut pub_date_val = None;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str() == Some("pub_date") {
-                pub_date_val = values.get(i);
-                break;
-            }
-        }
+    let nfitems = output_records(&out_dir, "nfitems", feed_id);
+    assert_eq!(nfitems.len(), 2);
+    for item in nfitems {
+        let pub_date_val = get_value_from_record(&item, "pub_date");
         assert!(pub_date_val.is_some(), "pub_date column present");
         assert!(
             pub_date_val.unwrap().is_number(),
@@ -2255,36 +1519,15 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(30304));
+    let feed_id = 30304_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut nfitems_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitems_") && name.ends_with("30304.json") {
-                nfitems_files.push(path);
-            }
-        }
-    }
-
-    assert_eq!(nfitems_files.len(), 1);
-    let contents = fs::read_to_string(&nfitems_files[0]).expect("read nfitems file");
-    let item: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = item["columns"].as_array()?;
-        let values = item["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
+    let mut nfitems = output_records(&out_dir, "nfitems", feed_id);
+    assert_eq!(nfitems.len(), 1);
+    let item = nfitems.pop().unwrap();
 
     assert_eq!(
-        get_value("guid"),
+        get_value_from_record(&item, "guid"),
         Some(JsonValue::from("https://example.com/ep.mp3"))
     );
 }
@@ -2315,39 +1558,15 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(33001));
+    let feed_id = 33001_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut found_path: Option<PathBuf> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_newsfeeds_") && name.ends_with("33001.json") {
-                found_path = Some(path);
-                break;
-            }
-        }
-    }
+    let nf = single_output_record(&out_dir, "newsfeeds", feed_id);
 
-    let nf_path = found_path.expect("should have written a newsfeeds output file");
-    let contents = fs::read_to_string(&nf_path).expect("read newsfeeds file");
-    let nf: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = nf["columns"].as_array()?;
-        let values = nf["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value("generator"), Some(JsonValue::from("GenX/1.2")));
-    assert_eq!(get_value("itunes_type"), Some(JsonValue::from("trailer")));
+    assert_eq!(get_value_from_record(&nf, "generator"), Some(JsonValue::from("GenX/1.2")));
+    assert_eq!(get_value_from_record(&nf, "itunes_type"), Some(JsonValue::from("trailer")));
     assert_eq!(
-        get_value("itunes_new_feed_url"),
+        get_value_from_record(&nf, "itunes_new_feed_url"),
         Some(JsonValue::from("https://example.com/new.xml"))
     );
 }
@@ -2375,38 +1594,14 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(33002));
+    let feed_id = 33002_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut found_path: Option<PathBuf> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_newsfeeds_") && name.ends_with("33002.json") {
-                found_path = Some(path);
-                break;
-            }
-        }
-    }
+    let nf = single_output_record(&out_dir, "newsfeeds", feed_id);
 
-    let nf_path = found_path.expect("should have written a newsfeeds output file");
-    let contents = fs::read_to_string(&nf_path).expect("read newsfeeds file");
-    let nf: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = nf["columns"].as_array()?;
-        let values = nf["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
-    assert_eq!(get_value("podcast_locked"), Some(JsonValue::from(1)));
+    assert_eq!(get_value_from_record(&nf, "podcast_locked"), Some(JsonValue::from(1)));
     assert_eq!(
-        get_value("podcast_owner"),
+        get_value_from_record(&nf, "podcast_owner"),
         Some(JsonValue::from("owner@example.com"))
     );
 }
@@ -2433,36 +1628,15 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(33003));
+    let feed_id = 33003_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut nfitems_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitems_") && name.ends_with("33003.json") {
-                nfitems_files.push(path);
-            }
-        }
-    }
-
-    assert_eq!(nfitems_files.len(), 1);
-    let contents = fs::read_to_string(&nfitems_files[0]).expect("read nfitems file");
-    let item: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = item["columns"].as_array()?;
-        let values = item["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
+    let mut nfitems = output_records(&out_dir, "nfitems", feed_id);
+    assert_eq!(nfitems.len(), 1);
+    let item = nfitems.pop().unwrap();
 
     assert_eq!(
-        get_value("itunes_episode_type"),
+        get_value_from_record(&item, "itunes_episode_type"),
         Some(JsonValue::from("bonus"))
     );
 }
@@ -2494,37 +1668,14 @@ https://example.com/feed.xml
 </channel>
 </rss>"#;
 
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(33004));
+    let feed_id = 33004_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut values_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitem_value_") && name.ends_with("33004.json") {
-                values_files.push(path);
-            }
-        }
-    }
-
-    assert_eq!(values_files.len(), 1);
-    let contents = fs::read_to_string(&values_files[0]).expect("read nfitem_value file");
-    let value: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = value["columns"].as_array()?;
-        let values = value["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
+    let value = single_output_record(&out_dir, "nfitem_value", feed_id);
 
     // Lightning maps to type code 0 and should replace the earlier bitcoin block
-    assert_eq!(get_value("type"), Some(JsonValue::from(0)));
-    let vb_val = get_value("value_block").unwrap();
+    assert_eq!(get_value_from_record(&value, "type"), Some(JsonValue::from(0)));
+    let vb_val = get_value_from_record(&value, "value_block").unwrap();
     let vb: JsonValue = serde_json::from_str(vb_val.as_str().unwrap()).unwrap();
     assert_eq!(vb["model"]["type"], "lightning");
     assert_eq!(vb["destinations"][0]["name"], "LN");
@@ -2554,34 +1705,12 @@ https://example.com/feed.xml
 
     process_feed_sync(Cursor::new(feed), "test.xml", Some(33005));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut nfitems_files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_nfitems_") && name.ends_with("33005.json") {
-                nfitems_files.push(path);
-            }
-        }
-    }
-
-    assert_eq!(nfitems_files.len(), 1);
-    let contents = fs::read_to_string(&nfitems_files[0]).expect("read nfitems file");
-    let item: serde_json::Value = serde_json::from_str(&contents).expect("valid JSON");
-
-    let get_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = item["columns"].as_array()?;
-        let values = item["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
+    let mut items = output_records(&out_dir, "nfitems", 33005);
+    assert_eq!(items.len(), 1);
+    let item = items.pop().unwrap();
 
     assert_eq!(
-        get_value("description"),
+        get_value_from_record(&item, "description"),
         Some(JsonValue::from("<p>Rich description</p>"))
     );
 }
@@ -2903,108 +2032,199 @@ https://example.com/atom.xml
   </entry>
 </feed>"#;
 
-    process_feed_sync(Cursor::new(feed), "atom.xml", Some(55001));
+    let feed_id = 55001_i64;
+    process_feed_sync(Cursor::new(feed), "atom.xml", Some(feed_id));
 
-    let entries = fs::read_dir(&out_dir).expect("output directory should be readable");
-    let mut newsfeeds_path: Option<PathBuf> = None;
-    let mut nfitems_files = Vec::new();
-    let mut pubsub_path: Option<PathBuf> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.contains("_newsfeeds_") && name.ends_with("55001.json") {
-                newsfeeds_path = Some(path);
-            } else if name.contains("_nfitems_") && name.ends_with("55001.json") {
-                nfitems_files.push(path);
-            } else if name.contains("_pubsub_") && name.ends_with("55001.json") {
-                pubsub_path = Some(path);
-            }
-        }
-    }
-
-    let nf_path = newsfeeds_path.expect("should have newsfeeds output for atom feed");
-    let nf_contents = fs::read_to_string(&nf_path).expect("read newsfeeds file");
-    let nf: serde_json::Value = serde_json::from_str(&nf_contents).expect("valid JSON");
-    let get_nf_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = nf["columns"].as_array()?;
-        let values = nf["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
+    let nf = single_output_record(&out_dir, "newsfeeds", feed_id);
+    let nfitems = output_records(&out_dir, "nfitems", feed_id);
+    let pubsub = single_output_record(&out_dir, "pubsub", feed_id);
 
     assert_eq!(
-        get_nf_value("link"),
+        get_value_from_record(&nf, "link"),
         Some(json!("https://example.com/atom"))
     );
     assert_eq!(
-        get_nf_value("description"),
+        get_value_from_record(&nf, "description"),
         Some(json!("Atom Description"))
     );
     assert_eq!(
-        get_nf_value("image"),
+        get_value_from_record(&nf, "image"),
         Some(json!("https://example.com/logo.png"))
     );
 
-    assert_eq!(nfitems_files.len(), 1);
-    let item_contents =
-        fs::read_to_string(&nfitems_files[0]).expect("read nfitems file for atom feed");
-    let item: serde_json::Value =
-        serde_json::from_str(&item_contents).expect("valid JSON in nfitems");
-    let get_item_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = item["columns"].as_array()?;
-        let values = item["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
+    assert_eq!(nfitems.len(), 1);
+    let item = &nfitems[0];
 
     assert_eq!(
-        get_item_value("link"),
+        get_value_from_record(item, "link"),
         Some(json!("https://example.com/atom/1"))
     );
-    assert_eq!(get_item_value("pub_date"), Some(json!(1704067200)));
+    assert_eq!(get_value_from_record(item, "pub_date"), Some(json!(1704067200)));
     assert_eq!(
-        get_item_value("enclosure_url"),
+        get_value_from_record(item, "enclosure_url"),
         Some(json!("https://example.com/audio.mp3"))
     );
-    assert_eq!(get_item_value("enclosure_length"), Some(json!(1234)));
+    assert_eq!(get_value_from_record(item, "enclosure_length"), Some(json!(1234)));
     assert_eq!(
-        get_item_value("enclosure_type"),
+        get_value_from_record(item, "enclosure_type"),
         Some(json!("audio/mpeg"))
     );
     assert_eq!(
-        get_item_value("description"),
+        get_value_from_record(item, "description"),
         Some(json!("Atom entry summary."))
     );
 
-    let pubsub_path = pubsub_path.expect("should have pubsub output for atom feed");
-    let pubsub_contents = fs::read_to_string(&pubsub_path).expect("read pubsub file");
-    let pubsub: serde_json::Value =
-        serde_json::from_str(&pubsub_contents).expect("valid JSON in pubsub");
-    let get_pubsub_value = |col_name: &str| -> Option<serde_json::Value> {
-        let columns = pubsub["columns"].as_array()?;
-        let values = pubsub["values"].as_array()?;
-        for (i, col) in columns.iter().enumerate() {
-            if col.as_str()? == col_name {
-                return values.get(i).cloned();
-            }
-        }
-        None
-    };
-
     assert_eq!(
-        get_pubsub_value("hub_url"),
+        get_value_from_record(&pubsub, "hub_url"),
         Some(json!("https://pubsubhubbub.appspot.com/"))
     );
     assert_eq!(
-        get_pubsub_value("self_url"),
+        get_value_from_record(&pubsub, "self_url"),
         Some(json!("https://example.com/atom.xml"))
     );
+}
+
+#[test]
+fn test_preserve_spaces_in_itunes_title() {
+    let out_dir = ensure_output_dir();
+
+    let feed = r#"1700000000
+[[NO_ETAG]]
+https://example.com/feed.xml
+1700000001
+<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+ xmlns:podcast="https://podcastindex.org/namespace/1.0">
+<channel>
+<title>Title with trailing spaces</title>
+<item>
+<title><![CDATA[Ep ]]></title>
+<itunes:title><![CDATA[Ep ]]></itunes:title>
+<guid>g-content</guid>
+<enclosure url="https://example.com/ep.mp3" length="1" type="audio/mpeg"/>
+</item>
+<item>
+<title><![CDATA[Ep2 ]]></title>
+<guid>g-content</guid>
+<enclosure url="https://example.com/ep.mp3" length="1" type="audio/mpeg"/>
+</item>
+</channel>
+</rss>"#;
+
+    let feed_id = 33006_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
+
+    let mut nfitems = output_records(&out_dir, "nfitems", feed_id);
+    assert_eq!(nfitems.len(), 2);
+    let item1 = nfitems.remove(0);
+    let item2 = nfitems.remove(0);
+
+    assert_eq!(
+        get_value_from_record(&item2, "title"),
+        Some(JsonValue::from("Ep2"))
+    );
+
+    assert_eq!(
+        get_value_from_record(&item1, "title"),
+        Some(JsonValue::from("Ep "))
+    );
+}
+
+#[test]
+fn test_description_precedence() {
+    let out_dir = ensure_output_dir();
+
+    let feed = r#"1700000000
+[[NO_ETAG]]
+https://example.com/feed.xml
+1700000001
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+     xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/">
+
+  <channel>
+    <title>Example Feed</title>
+
+    <!-- Case 1: iTunes summary (common in podcast feeds) -->
+    <item>
+      <title>Episode with iTunes Summary</title>
+      <itunes:summary>This is the iTunes summary description for the podcast episode.</itunes:summary>
+      <guid>case-1</guid>
+      <enclosure url="https://example.com/case1.mp3" length="1" type="audio/mpeg"/>
+    </item>
+
+    <!-- Case 2: content:encoded within description (WordPress/blog feeds) -->
+    <item>
+      <title>Blog Post with Content Encoded</title>
+      <description>
+        <content:encoded><![CDATA[
+          <p>This is the full HTML content of the blog post with formatting.</p>
+          <p>It can contain multiple paragraphs and rich content.</p>
+        ]]></content:encoded>
+      </description>
+      <enclosure url="https://example.com/ep.mp3" length="1" type="audio/mpeg"/>
+   </item>
+
+    <!-- Case 3: Simple description field -->
+    <item>
+      <title>Simple Description</title>
+      <description>This is a plain text description of the item.</description>
+      <enclosure url="https://example.com/ep.mp3" length="1" type="audio/mpeg"/>
+    </item>
+
+    <!-- Case 4: content field as array (parsed from Atom feeds) -->
+    <item>
+      <title>Atom-style Content</title>
+      <content type="html">
+        <![CDATA[<p>First content element</p>]]>
+      </content>
+      <content type="text">
+        Second content element (would be ignored)
+      </content>
+      <enclosure url="https://example.com/ep.mp3" length="1" type="audio/mpeg"/>
+    </item>
+
+    <!-- Case 5: content with #text property (from XML parsing) -->
+    <item>
+      <title>Content with Text Node</title>
+      <content type="html">
+        This text becomes the #text property when parsed
+      </content>
+      <enclosure url="https://example.com/ep.mp3" length="1" type="audio/mpeg"/>
+    </item>
+
+    <!-- Case 6: Multiple sources - iTunes takes priority -->
+    <item>
+      <title>Multiple Description Sources</title>
+      <itunes:summary>iTunes summary (wins)</itunes:summary>
+      <description>Regular description (ignored)</description>
+      <content:encoded>Content encoded (ignored)</content:encoded>
+      <enclosure url="https://example.com/ep.mp3" length="1" type="audio/mpeg"/>
+    </item>
+
+    <!-- Case 7: No description at all -->
+    <item>
+      <title>No Description</title>
+      <!-- Will result in empty string -->
+      <enclosure url="https://example.com/ep.mp3" length="1" type="audio/mpeg"/>
+    </item>
+
+  </channel>
+</rss>"#;
+
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(33007));
+
+    let nfitems_files = output_records(&out_dir, "nfitems", 33007);
+    assert_eq!(nfitems_files.len(), 7);
+
+    assert_eq!(get_value_from_record(&nfitems_files[0], "description"), Some(JsonValue::from("This is the iTunes summary description for the podcast episode.")));
+    assert_eq!(get_value_from_record(&nfitems_files[1], "description"), Some(JsonValue::from(
+        "<p>This is the full HTML content of the blog post with formatting.</p>\n          <p>It can contain multiple paragraphs and rich content.</p>"
+    )));
+
+    assert_eq!(get_value_from_record(&nfitems_files[2], "description"), Some(JsonValue::from("This is a plain text description of the item.")));
+    assert_eq!(get_value_from_record(&nfitems_files[3], "description"), Some(JsonValue::from("<p>First content element</p>")));
+    assert_eq!(get_value_from_record(&nfitems_files[4], "description"), Some(JsonValue::from("This text becomes the #text property when parsed")));
+    assert_eq!(get_value_from_record(&nfitems_files[5], "description"), Some(JsonValue::from("iTunes summary (wins)")));
+    assert_eq!(get_value_from_record(&nfitems_files[6], "description"), Some(JsonValue::from("")));
 }

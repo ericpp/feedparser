@@ -59,6 +59,7 @@ pub fn on_start(state: &mut ParserState) {
     state.value_model_suggested.clear();
     state.item_value_pending = None;
     state.item_value_has_lightning = false;
+    state.content.clear();
 }
 
 pub fn on_end(feed_id: Option<i64>, state: &mut ParserState) {

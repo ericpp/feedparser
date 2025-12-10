@@ -95,6 +95,7 @@ pub struct ParserState {
     pub value_model_method: String,
     pub value_model_suggested: String,
     pub in_podcast_value: bool,
+    pub content: String,
 
     // Item metrics
     pub item_pubdates: Vec<i64>,
@@ -192,6 +193,7 @@ impl Default for ParserState {
             newest_item_pubdate: None,
             oldest_item_pubdate: None,
             item_hash: md5::Context::new(),
+            content: String::new(),
         }
     }
 }
