@@ -54,6 +54,11 @@ pub fn dispatch_start(current_element: &str, attributes: &[OwnedAttribute], stat
         "podcast:value" => podcast_value::on_start(attributes, state),
         "podcast:valueRecipient" => podcast_value::on_value_recipient(attributes, state),
         "enclosure" => enclosure::on_start(attributes, state),
+        "podcast:alternateEnclosure" => {
+            if state.in_item {
+                state.in_podcast_alternate_enclosure = true;
+            }
+        }
         _ => {}
     }
 
@@ -120,6 +125,7 @@ pub fn dispatch_end(current_element: &str, feed_id: Option<i64>, state: &mut Par
         "podcast:soundbite" => podcast_soundbite::on_end(feed_id, state),
         "podcast:person" => podcast_person::on_end(feed_id, state),
         "podcast:value" => podcast_value::on_end(feed_id, state),
+        "podcast:alternateEnclosure" => state.in_podcast_alternate_enclosure = false,
         _ => {}
     }
 }

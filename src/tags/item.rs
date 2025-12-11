@@ -27,6 +27,7 @@ pub fn on_start(state: &mut ParserState) {
     state.enclosure_url.clear();
     state.enclosure_length.clear();
     state.enclosure_type.clear();
+    state.in_podcast_alternate_enclosure = false;
 
     state.podcast_funding_url.clear();
     state.podcast_funding_text.clear();

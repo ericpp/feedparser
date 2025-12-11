@@ -1941,7 +1941,7 @@ xmlns:content="http://purl.org/rss/1.0/modules/content/">
     let transcripts = &tables["nfitem_transcripts"][0];
     assert_eq!(
         get_value(transcripts, "itemid"),
-        Some(json!(expected_item_id.clone()))
+        Some(json!(expected_item_id))
     );
     assert_eq!(
         get_value(transcripts, "url"),
@@ -1952,7 +1952,7 @@ xmlns:content="http://purl.org/rss/1.0/modules/content/">
     let chapters = &tables["nfitem_chapters"][0];
     assert_eq!(
         get_value(chapters, "itemid"),
-        Some(json!(expected_item_id.clone()))
+        Some(json!(expected_item_id))
     );
     assert_eq!(
         get_value(chapters, "url"),
@@ -1963,7 +1963,7 @@ xmlns:content="http://purl.org/rss/1.0/modules/content/">
     let soundbite = &tables["nfitem_soundbites"][0];
     assert_eq!(
         get_value(soundbite, "itemid"),
-        Some(json!(expected_item_id.clone()))
+        Some(json!(expected_item_id))
     );
     assert_eq!(get_value(soundbite, "title"), Some(json!("Clip")));
     assert_eq!(get_value(soundbite, "start_time"), Some(json!("10")));
@@ -1972,7 +1972,7 @@ xmlns:content="http://purl.org/rss/1.0/modules/content/">
     let person = &tables["nfitem_persons"][0];
     assert_eq!(
         get_value(person, "itemid"),
-        Some(json!(expected_item_id.clone()))
+        Some(json!(expected_item_id))
     );
     assert_eq!(get_value(person, "name"), Some(json!("Host Name")));
     assert_eq!(get_value(person, "role"), Some(json!("host")));
@@ -1989,7 +1989,7 @@ xmlns:content="http://purl.org/rss/1.0/modules/content/">
     let item_value = &tables["nfitem_value"][0];
     assert_eq!(
         get_value(item_value, "itemid"),
-        Some(json!(expected_item_id.clone()))
+        Some(json!(expected_item_id))
     );
     assert_eq!(get_value(item_value, "type"), Some(json!(1)));
     let vb_val = get_value(item_value, "value_block").unwrap();
@@ -2274,6 +2274,6 @@ https://example.com/feed.xml
     let nfitems_files = output_records(&out_dir, "nfitems", 33008);
     assert_eq!(nfitems_files.len(), 1);
 
-    assert_eq!(get_value_from_record(&nfitems_files[0], "duration"), Some(JsonValue::from(83)));
+    assert_eq!(get_value_from_record(&nfitems_files[0], "itunes_duration"), Some(JsonValue::from(83)));
     // assert_eq!(get_value_from_record(&nfitems_files[1], "duration"), Some(JsonValue::from(3269)));
 }

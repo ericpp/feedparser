@@ -3,7 +3,7 @@ use xml::attribute::OwnedAttribute;
 use crate::{outputs, parser_state::ParserState};
 
 pub fn on_start(attributes: &[OwnedAttribute], state: &mut ParserState) {
-    if !state.in_item {
+    if !state.in_item || state.in_podcast_alternate_enclosure {
         return;
     }
 

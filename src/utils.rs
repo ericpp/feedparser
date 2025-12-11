@@ -30,7 +30,6 @@ pub fn parse_pub_date_to_unix(raw: &str) -> Option<i64> {
 
 pub fn time_to_seconds(time_string: &str) -> i32 {
     let parts: Vec<&str> = time_string.split(':').collect();
-    let len = parts.len();
 
     match parts.len() {
         2 => match (parts[0].parse::<i32>(), parts[1].parse::<i32>()) {
@@ -58,18 +57,6 @@ pub fn parse_itunes_duration(raw: &str) -> i32 {
         truncate_int(seconds)
     } else {
         time_to_seconds(raw)
-    }
-}
-
-pub fn parse_numeric_token(raw: &str) -> i32 {
-    let digits: String = raw.chars().filter(|c| c.is_ascii_digit()).collect();
-    if digits.is_empty() {
-        0
-    } else {
-        let parsed = digits.parse::<i64>().unwrap_or(i64::MAX);
-        parsed
-            .clamp(i32::MIN as i64, i32::MAX as i64)
-            as i32
     }
 }
 
@@ -151,17 +138,6 @@ pub fn truncate_str(s: &str, max_len: usize) -> String {
         out.truncate(max_len);
     }
     out
-}
-
-pub fn generate_item_id(feed_id: Option<i64>, guid: &str, enclosure_url: &str) -> String {
-    let composite = format!(
-        "{}|{}|{}",
-        feed_id.unwrap_or(0),
-        guid.trim(),
-        enclosure_url.trim()
-    );
-    println!("generate_item_id: '{}'", composite);
-    format!("{:x}", md5::compute(composite.as_bytes()))
 }
 
 pub fn build_value_block(state: &ParserState) -> Option<String> {
