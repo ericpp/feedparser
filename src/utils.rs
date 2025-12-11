@@ -28,24 +28,37 @@ pub fn parse_pub_date_to_unix(raw: &str) -> Option<i64> {
         .ok()
 }
 
+pub fn time_to_seconds(time_string: &str) -> i32 {
+    let parts: Vec<&str> = time_string.split(':').collect();
+    let len = parts.len();
+
+    match parts.len() {
+        2 => match (parts[0].parse::<i32>(), parts[1].parse::<i32>()) {
+            (Ok(minutes), Ok(secs)) => {
+                minutes * 60 + secs
+            }
+            _ => 0,
+        },
+        3 => match (parts[0].parse::<i32>(), parts[1].parse::<i32>(), parts[2].parse::<i32>()) {
+            (Ok(hours), Ok(minutes), Ok(secs)) => {
+                hours * 3600 + minutes * 60 + secs
+            }
+            _ => 0,
+        },
+        _ => 0,
+    }
+}
+
+pub fn truncate_int(number: i32) -> i32 {
+    number.clamp(-2147483647, 2147483647)
+}
+
 pub fn parse_itunes_duration(raw: &str) -> i32 {
-    let t = raw.trim();
-    if t.is_empty() {
-        return 0;
+    if let Ok(seconds) = raw.parse::<i32>() {
+        truncate_int(seconds)
+    } else {
+        time_to_seconds(raw)
     }
-    let parts: Vec<&str> = t.split(':').collect();
-    if parts.len() == 3 {
-        let h = parts[0].parse::<i32>().unwrap_or(0);
-        let m = parts[1].parse::<i32>().unwrap_or(0);
-        let s = parts[2].parse::<i32>().unwrap_or(0);
-        return h * 3600 + m * 60 + s;
-    }
-    if parts.len() == 2 {
-        let m = parts[0].parse::<i32>().unwrap_or(0);
-        let s = parts[1].parse::<i32>().unwrap_or(0);
-        return m * 60 + s;
-    }
-    t.parse::<i32>().unwrap_or(0)
 }
 
 pub fn parse_numeric_token(raw: &str) -> i32 {
@@ -140,13 +153,14 @@ pub fn truncate_str(s: &str, max_len: usize) -> String {
     out
 }
 
-pub fn generate_item_id(guid: &str, enclosure_url: &str, feed_id: Option<i64>) -> String {
+pub fn generate_item_id(feed_id: Option<i64>, guid: &str, enclosure_url: &str) -> String {
     let composite = format!(
         "{}|{}|{}",
         feed_id.unwrap_or(0),
         guid.trim(),
         enclosure_url.trim()
     );
+    println!("generate_item_id: '{}'", composite);
     format!("{:x}", md5::compute(composite.as_bytes()))
 }
 

@@ -367,7 +367,7 @@ pub fn write_nfitem_transcript(state: &ParserState, feed_id: Option<i64>) {
         return;
     }
 
-    let item_id = utils::generate_item_id(&state.guid, &state.enclosure_url, feed_id);
+    let item_id = format!("{}_{}", feed_id.unwrap_or(0), state.item_count + 1);
 
     let record = SqlInsert {
         table: "nfitem_transcripts".to_string(),
@@ -392,7 +392,7 @@ pub fn write_nfitem_chapters(state: &ParserState, feed_id: Option<i64>) {
         return;
     }
 
-    let item_id = utils::generate_item_id(&state.guid, &state.enclosure_url, feed_id);
+    let item_id = format!("{}_{}", feed_id.unwrap_or(0), state.item_count + 1);
 
     let record = SqlInsert {
         table: "nfitem_chapters".to_string(),
@@ -417,7 +417,7 @@ pub fn write_nfitem_soundbites(state: &ParserState, feed_id: Option<i64>) {
         return;
     }
 
-    let item_id = utils::generate_item_id(&state.guid, &state.enclosure_url, feed_id);
+    let item_id = format!("{}_{}", feed_id.unwrap_or(0), state.item_count + 1);
 
     let record = SqlInsert {
         table: "nfitem_soundbites".to_string(),
@@ -443,8 +443,7 @@ pub fn write_nfitem_persons(state: &ParserState, feed_id: Option<i64>) {
     if state.current_person_name.trim().is_empty() {
         return;
     }
-
-    let item_id = utils::generate_item_id(&state.guid, &state.enclosure_url, feed_id);
+    let item_id = format!("{}_{}", feed_id.unwrap_or(0), state.item_count + 1);
 
     let record = SqlInsert {
         table: "nfitem_persons".to_string(),
@@ -470,23 +469,9 @@ pub fn write_nfitem_persons(state: &ParserState, feed_id: Option<i64>) {
     write_record(&record, "nfitem_persons");
 }
 
-#[allow(dead_code)]
-pub fn write_nfvalue(state: &ParserState, feed_id: Option<i64>) {
-    if let Some(value_block_json) = utils::build_value_block(state) {
-        let type_code = utils::map_value_type(&state.value_model_type);
-        write_nfvalue_from_block(feed_id, type_code, &value_block_json);
-    }
-}
+pub fn write_nfvalue_from_block(feed_id: Option<i64>, value_type: i32, block: &str, state: &ParserState) {
+    let item_id = format!("{}_{}", feed_id.unwrap_or(0), state.item_count + 1);
 
-#[allow(dead_code)]
-pub fn write_nfitem_value(state: &ParserState, feed_id: Option<i64>) {
-    if let Some(value_block_json) = utils::build_value_block(state) {
-        let type_code = utils::map_value_type(&state.value_model_type);
-        write_nfitem_value_from_block(state, feed_id, type_code, &value_block_json);
-    }
-}
-
-pub fn write_nfvalue_from_block(feed_id: Option<i64>, value_type: i32, block: &str) {
     let record = SqlInsert {
         table: "nfvalue".to_string(),
         columns: vec![
@@ -518,6 +503,8 @@ pub fn write_nfitem_value_from_block(
     value_type: i32,
     block: &str,
 ) {
+    let item_id = format!("{}_{}", feed_id.unwrap_or(0), state.item_count + 1);
+
     let record = SqlInsert {
         table: "nfitem_value".to_string(),
         columns: vec![
@@ -527,7 +514,7 @@ pub fn write_nfitem_value_from_block(
             "createdon".to_string(),
         ],
         values: vec![
-            JsonValue::from(utils::generate_item_id(&state.guid, &state.enclosure_url, feed_id)),
+            JsonValue::from(item_id),
             JsonValue::from(block.to_string()),
             JsonValue::from(value_type),
             JsonValue::from(

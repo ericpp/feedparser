@@ -45,6 +45,7 @@ pub fn dispatch_start(current_element: &str, attributes: &[OwnedAttribute], stat
         "channel" | "feed" => channel::on_start(state),
         "item" | "entry" => item::on_start(state),
         "image" => image::on_start(state),
+        "itunes:duration" => itunes_duration::on_start(state),
         "itunes:owner" => itunes_owner::on_start(state),
         "podcast:transcript" => podcast_transcript::on_start(attributes, state),
         "podcast:chapters" => podcast_chapters::on_start(attributes, state),

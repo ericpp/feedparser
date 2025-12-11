@@ -1894,8 +1894,9 @@ xmlns:content="http://purl.org/rss/1.0/modules/content/">
 
     let expected_pub_ts =
         utils::parse_pub_date_to_unix("Tue, 02 Jan 2024 03:04:05 +0000").unwrap();
-    let expected_item_id =
-        utils::generate_item_id("guid-party", "https://cdn.example.com/episode.mp3", feed_id);
+    // let expected_item_id =
+    //     utils::generate_item_id("guid-party", "https://cdn.example.com/episode.mp3", feed_id);
+    let expected_item_id = "404040_1";
 
     let nfitem = &tables["nfitems"][0];
     assert_eq!(
@@ -2227,4 +2228,52 @@ https://example.com/feed.xml
     assert_eq!(get_value_from_record(&nfitems_files[4], "description"), Some(JsonValue::from("This text becomes the #text property when parsed")));
     assert_eq!(get_value_from_record(&nfitems_files[5], "description"), Some(JsonValue::from("iTunes summary (wins)")));
     assert_eq!(get_value_from_record(&nfitems_files[6], "description"), Some(JsonValue::from("")));
+}
+
+
+#[test]
+fn test_alternate_enclosures() {
+    let out_dir = ensure_output_dir();
+
+    let feed = r#"1700000000
+[[NO_ETAG]]
+https://example.com/feed.xml
+1700000001
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+    xmlns:podcast="https://podcastindex.org/namespace/1.0"
+    xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+    xmlns:content="http://purl.org/rss/1.0/modules/content/">
+
+  <channel>
+    <title>Example Feed</title>
+    <item>
+      <itunes:episodeType>bonus</itunes:episodeType>
+      <enclosure url="https://feeds.fountain.fm/40huHEEF6JMPGYctMuUI/items/WxMQ7HpjU1XJpgUbo1Fm/files/AUDIO---DEFAULT---a757e3df-28f7-4b38-a704-e0e7780c70f9.mp3" length="2397614" type="audio/mpeg"/>
+      <itunes:duration>83</itunes:duration>
+      <podcast:chapters url="https://feeds.fountain.fm/40huHEEF6JMPGYctMuUI/items/WxMQ7HpjU1XJpgUbo1Fm/files/AUDIO---CHAPTERS---DEFAULT---PODCAST.json" type="application/json+chapters"/>
+      <podcast:transcript url="https://feeds.fountain.fm/40huHEEF6JMPGYctMuUI/items/WxMQ7HpjU1XJpgUbo1Fm/files/AUDIO---TRANSCRIPT---DEFAULT---SRT.srt" type="application/x-subrip" rel="captions"/>
+      <podcast:alternateEnclosure type="audio/mpeg" length="78858122" title="Bonus Episode" paywall="L402" auth="NOSTR">
+        <itunes:duration>3269</itunes:duration>
+        <podcast:chapters url="https://feeds.fountain.fm/40huHEEF6JMPGYctMuUI/items/WxMQ7HpjU1XJpgUbo1Fm/files/AUDIO---CHAPTERS---PAID---PODCAST.json" type="application/json+chapters"/>
+        <podcast:transcript url="https://feeds.fountain.fm/40huHEEF6JMPGYctMuUI/items/WxMQ7HpjU1XJpgUbo1Fm/files/AUDIO---TRANSCRIPT---PAID---SRT.srt" type="application/x-subrip" rel="captions"/>
+        <podcast:source uri="https://feeds.fountain.fm/40huHEEF6JMPGYctMuUI/items/WxMQ7HpjU1XJpgUbo1Fm/files/AUDIO---PAID---91408357-3379-407d-a8b3-85b3cc2d3349.mp3"/>
+      </podcast:alternateEnclosure>
+      <guid isPermaLink="false">0bf8aeaf-9f2b-4008-812d-e9389e4639f7</guid>
+      <pubDate>Thu, 24 Jul 2025 19:35:57 GMT</pubDate>
+      <title>Bonus 01: Living in the Shadow of Bitcoin</title>
+      <description>&lt;p&gt;A viral anti-Bitcoin video spreads fear through emotional storytelling and slick sound design. But what's the real story behind the drama, and why does it matter?&lt;/p&gt;</description>
+      <itunes:explicit>false</itunes:explicit>
+      <itunes:image href="https://feeds.fountain.fm/40huHEEF6JMPGYctMuUI/items/WxMQ7HpjU1XJpgUbo1Fm/files/CHAPTER_ART---DEFAULT---e32b13c4-9bdf-4102-9ff0-4c4fc72462a9.jpg"/>
+    </item>
+  </channel>
+</rss>"#;
+
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(33008));
+
+    let nfitems_files = output_records(&out_dir, "nfitems", 33008);
+    assert_eq!(nfitems_files.len(), 1);
+
+    assert_eq!(get_value_from_record(&nfitems_files[0], "duration"), Some(JsonValue::from(83)));
+    // assert_eq!(get_value_from_record(&nfitems_files[1], "duration"), Some(JsonValue::from(3269)));
 }

@@ -23,6 +23,7 @@ pub fn on_start(attributes: &[OwnedAttribute], state: &mut ParserState) {
 pub fn on_end(feed_id: Option<i64>, state: &mut ParserState) {
     if state.in_podcast_transcript {
         state.in_podcast_transcript = false;
+
         // Only write transcript if item has a valid enclosure
         if state.item_has_valid_enclosure {
             state

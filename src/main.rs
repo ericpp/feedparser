@@ -269,26 +269,27 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 state.current_element = get_prefixed_name(&name);
                 let current = state.current_element.clone();
-                #[cfg(test)]
-                {
-                    println!("start: {} attrs {}", current, attributes.len());
-                    for attr in &attributes {
-                        println!(" attr {}={}", attr.name.local_name, attr.value);
-                    }
-                }
+                // #[cfg(test)]
+                // {
+                    // println!("start: {} attrs {}", current, attributes.len());
+                    // for attr in &attributes {
+                    //     println!(" attr {}={}", attr.name.local_name, attr.value);
+                    // }
+                // }
                 tags::dispatch_start(&current, &attributes, &mut state);
             }
 
             //Text is found.
             Ok(XmlEvent::Characters(data)) => {
                 let current = state.current_element.clone();
+                // println!("cdata: '{}' '{}'", current, data);
                 tags::dispatch_text(&current, &data, &mut state);
             }
 
             // CDATA is also textual content — treat it the same as Characters
             Ok(XmlEvent::CData(data)) => {
                 let current = state.current_element.clone();
-                println!("cdata: '{}' '{}'", current, data);
+                // println!("cdata: '{}' '{}'", current, data);
                 tags::dispatch_text(&current, &data, &mut state);
             }
 

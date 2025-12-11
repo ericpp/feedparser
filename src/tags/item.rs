@@ -76,6 +76,7 @@ pub fn on_end(feed_id: Option<i64>, state: &mut ParserState) {
     if state.guid.trim().is_empty() {
         state.guid = state.enclosure_url.clone();
     }
+
     if state.enclosure_type.trim().is_empty() {
         state.enclosure_type = utils::guess_enclosure_type(&state.enclosure_url);
     }
@@ -88,6 +89,7 @@ pub fn on_end(feed_id: Option<i64>, state: &mut ParserState) {
 
     let pub_date_ts = utils::parse_pub_date_to_unix(state.pub_date.trim())
         .unwrap_or_else(|| state.pub_date.trim().parse::<i64>().unwrap_or(0));
+
     state.item_pubdates.push(pub_date_ts);
     state.item_count += 1;
 
@@ -105,20 +107,15 @@ pub fn on_end(feed_id: Option<i64>, state: &mut ParserState) {
     } else {
         state.title.trim()
     };
+
     state.item_hash.consume(hash_title.as_bytes());
     state.item_hash.consume(state.link.trim().as_bytes());
-    state
-        .item_hash
-        .consume(state.enclosure_url.trim().as_bytes());
-    state
-        .item_hash
-        .consume(state.enclosure_type.trim().as_bytes());
-    state
-        .item_hash
-        .consume(state.podcast_funding_url.trim().as_bytes());
-    state
-        .item_hash
-        .consume(state.podcast_funding_text.trim().as_bytes());
+    state.item_hash.consume(state.enclosure_url.trim().as_bytes());
+    state.item_hash.consume(state.enclosure_type.trim().as_bytes());
+    state.item_hash.consume(state.podcast_funding_url.trim().as_bytes());
+    state.item_hash.consume(state.podcast_funding_text.trim().as_bytes());
+    state.item_hash.consume(state.current_transcript_url.trim().as_bytes());
+    state.item_hash.consume(state.current_transcript_type.trim().as_bytes());
 
     state.in_item = false;
 }
