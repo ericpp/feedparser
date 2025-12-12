@@ -13,6 +13,7 @@ use xml::name::OwnedName;
 mod parser_state;
 mod tags;
 mod outputs;
+#[cfg(test)]
 mod tests;
 mod utils;
 use parser_state::ParserState;

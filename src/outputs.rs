@@ -469,7 +469,7 @@ pub fn write_nfitem_persons(state: &ParserState, feed_id: Option<i64>) {
     write_record(&record, "nfitem_persons");
 }
 
-pub fn write_nfvalue_from_block(feed_id: Option<i64>, value_type: i32, block: &str, state: &ParserState) {
+pub fn write_nfvalue_from_block(feed_id: Option<i64>, value_type: i32, block: &str) {
     let record = SqlInsert {
         table: "nfvalue".to_string(),
         columns: vec![

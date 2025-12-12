@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::DateTime;
 use md5;
 use serde_json::{json, Value as JsonValue};
@@ -80,34 +82,50 @@ pub fn guess_enclosure_type(url: &str) -> String {
 }
 
 pub fn calculate_update_frequency(pubdates: &[i64]) -> i32 {
-    if pubdates.len() < 2 {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    
+    let time_400_days_ago = now - (400 * 24 * 60 * 60);
+    let time_200_days_ago = now - (200 * 24 * 60 * 60);
+    let time_100_days_ago = now - (100 * 24 * 60 * 60);
+    let time_40_days_ago = now - (40 * 24 * 60 * 60);
+    let time_20_days_ago = now - (20 * 24 * 60 * 60);
+    let time_10_days_ago = now - (10 * 24 * 60 * 60);
+    let time_5_days_ago = now - (5 * 24 * 60 * 60);
+
+    if pubdates.iter().filter(|&&time| time > time_400_days_ago).count() == 0 {
         return 9;
     }
-    let min = *pubdates.iter().min().unwrap_or(&0);
-    let max = *pubdates.iter().max().unwrap_or(&0);
-    let span = max.saturating_sub(min);
-    let avg = span / (pubdates.len().saturating_sub(1) as i64).max(1);
-
-    let day = 86_400;
-    if avg <= 5 * day {
-        1
-    } else if avg <= 10 * day {
-        2
-    } else if avg <= 20 * day {
-        3
-    } else if avg <= 40 * day {
-        4
-    } else if avg <= 70 * day {
-        5
-    } else if avg <= 100 * day {
-        6
-    } else if avg <= 200 * day {
-        7
-    } else if avg <= 400 * day {
-        8
-    } else {
-        9
+    if pubdates.iter().filter(|&&time| time > time_200_days_ago).count() == 0 {
+        return 8;
     }
+    if pubdates.iter().filter(|&&time| time > time_100_days_ago).count() == 0 {
+        return 7;
+    }
+    if pubdates.iter().filter(|&&time| time > time_5_days_ago).count() > 1 {
+        return 1;
+    }
+    if pubdates.iter().filter(|&&time| time > time_10_days_ago).count() > 1 {
+        return 2;
+    }
+    if pubdates.iter().filter(|&&time| time > time_20_days_ago).count() > 1 {
+        return 3;
+    }
+    if pubdates.iter().filter(|&&time| time > time_40_days_ago).count() > 1 {
+        return 4;
+    }
+    if pubdates.iter().filter(|&&time| time > time_100_days_ago).count() > 1 {
+        return 5;
+    }
+    if pubdates.iter().filter(|&&time| time > time_200_days_ago).count() > 1 {
+        return 6;
+    }
+    if pubdates.iter().filter(|&&time| time > time_400_days_ago).count() >= 1 {
+        return 7;
+    }
+    0
 }
 
 pub fn build_category_ids(raw: &[String]) -> Vec<i32> {
@@ -156,7 +174,9 @@ pub fn build_value_block(state: &ParserState) -> Option<String> {
             obj.insert("type".into(), JsonValue::from(r.recipient_type));
             obj.insert("address".into(), JsonValue::from(r.address));
             obj.insert("split".into(), JsonValue::from(r.split));
-            obj.insert("fee".into(), JsonValue::from(r.fee));
+            if r.fee {
+                obj.insert("fee".into(), JsonValue::from(true));
+            }
             if let Some(k) = r.custom_key {
                 obj.insert("customKey".into(), JsonValue::from(k));
             }
@@ -167,16 +187,20 @@ pub fn build_value_block(state: &ParserState) -> Option<String> {
         })
         .collect();
 
+    let mut model: HashMap<&str, &str> = HashMap::new();
+    model.insert("type", &state.value_model_type);
+    model.insert("method", &state.value_model_method);
+
+    if !state.value_model_suggested.is_empty() {
+        model.insert("suggested", &state.value_model_suggested);
+    }
+
     let value_block = json!({
-        "model": {
-            "type": state.value_model_type,
-            "method": state.value_model_method,
-            "suggested": state.value_model_suggested,
-        },
+        "model": model,
         "destinations": destinations,
     });
 
-    Some(value_block.to_string())
+    Some(canonical_json_string(&value_block))
 }
 
 pub fn map_value_type(raw: &str) -> i32 {
@@ -186,6 +210,29 @@ pub fn map_value_type(raw: &str) -> i32 {
         "bitcoin" => 2,
         _ => 0,
     }
+}
+
+fn canonicalize_json(value: &JsonValue) -> JsonValue {
+    match value {
+        JsonValue::Object(map) => {
+            let mut keys: Vec<_> = map.keys().cloned().collect();
+            keys.sort_unstable();
+
+            let mut out = serde_json::Map::with_capacity(map.len());
+            for key in keys {
+                if let Some(v) = map.get(&key) {
+                    out.insert(key, canonicalize_json(v));
+                }
+            }
+            JsonValue::Object(out)
+        }
+        JsonValue::Array(items) => JsonValue::Array(items.iter().map(canonicalize_json).collect()),
+        _ => value.clone(),
+    }
+}
+
+fn canonical_json_string(value: &JsonValue) -> String {
+    canonicalize_json(value).to_string()
 }
 
 

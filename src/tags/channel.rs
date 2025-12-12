@@ -49,7 +49,7 @@ pub fn on_end(feed_id: Option<i64>, state: &mut ParserState) {
         outputs::write_nffunding(state, feed_id);
         outputs::write_nfcategories(state, feed_id);
         if let Some((value_type, block)) = state.channel_value_pending.take() {
-            outputs::write_nfvalue_from_block(feed_id, value_type, &block, state);
+            outputs::write_nfvalue_from_block(feed_id, value_type, &block);
         }
         state.in_channel = false;
     }
