@@ -47,21 +47,24 @@ pub fn sanitize_url(url: &str) -> String {
     truncate_string(url, 768)
 }
 
-pub fn parse_pub_date_to_unix(raw: &str) -> Option<i64> {
-    let t = raw.trim();
-    if t.is_empty() {
-        return None;
+pub fn pub_date_to_timestamp(pub_date: &str) -> i64 {
+    let pub_date_str = pub_date.trim();
+    if pub_date_str.is_empty() {
+        return 0; // bad pub date, return 0
     }
-    if let Ok(num) = t.parse::<i64>() {
-        return Some(num);
+
+    if let Ok(num) = pub_date_str.parse::<i64>() {
+        return num; // already a timestamp
     }
-    DateTime::parse_from_rfc2822(t)
-        .or_else(|_| DateTime::parse_from_rfc3339(t))
-        .or_else(|_| DateTime::parse_from_str(t, "%a, %d %b %Y %H:%M:%S %z"))
-        .or_else(|_| DateTime::parse_from_str(t, "%a, %d %b %Y %H:%M:%S GMT"))
+
+    // parse rfc 2882 (rss spec) and iso 8601 (rfc 3339)
+    DateTime::parse_from_rfc2822(pub_date_str)
+        .or_else(|_| DateTime::parse_from_rfc3339(pub_date_str))
         .map(|dt| dt.timestamp())
-        .ok()
+        .unwrap_or(0) // return timestamp or 0 if error
 }
+
+
 
 pub fn calculate_update_frequency(pubdates: &[i64]) -> i32 {
     let now = std::time::SystemTime::now()
@@ -143,24 +146,27 @@ pub fn guess_enclosure_type(url: &str) -> String {
     "".to_string()
 }
 
+/*
+* Convert time string to seconds
+* 01:02 = 62 seconds
+* Thanks to Glenn Bennett!
+*/
 pub fn time_to_seconds(time_string: &str) -> i32 {
-    let fallback = || 30 * 60; // Default 30 minutes like JS timeToSeconds Nan handling
-    let parts: Vec<&str> = time_string.split(':').collect();
+    let parts = time_string.split(':').collect::<Vec<&str>>();
 
-    match parts.len() {
-        2 => match (parts[0].parse::<i32>(), parts[1].parse::<i32>()) {
-            (Ok(minutes), Ok(secs)) => minutes * 60 + secs,
-            _ => fallback(),
-        },
-        3 => match (
-            parts[0].parse::<i32>(),
-            parts[1].parse::<i32>(),
-            parts[2].parse::<i32>(),
-        ) {
-            (Ok(hours), Ok(minutes), Ok(secs)) => hours * 3600 + minutes * 60 + secs,
-            _ => fallback(),
-        },
-        _ => fallback(),
+    match parts.len() - 1 {
+        1 => {
+            let minutes = parts[0].parse::<i32>().unwrap_or(0);
+            let seconds = parts[1].parse::<i32>().unwrap_or(0);
+            minutes * 60 + seconds
+        }
+        2 => {
+            let hours = parts[0].parse::<i32>().unwrap_or(0);
+            let minutes = parts[1].parse::<i32>().unwrap_or(0);
+            let seconds = parts[2].parse::<i32>().unwrap_or(0);
+            hours * 3600 + minutes * 60 + seconds
+        }
+        _ => time_string.parse::<i32>().unwrap_or(30 * 60),
     }
 }
 

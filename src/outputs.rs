@@ -74,9 +74,9 @@ pub fn write_newsfeeds(state: &ParserState, feed_id: Option<i64>) {
     let link = utils::clean_string(&state.channel_link);
 
     let description = if !state.channel_itunes_summary.is_empty() {
-        state.channel_itunes_summary.clone()
+        state.channel_itunes_summary.as_str()
     } else {
-        state.channel_description.clone()
+        state.channel_description.as_str()
     };
 
     let image = if !state.channel_image.is_empty() {
@@ -91,7 +91,11 @@ pub fn write_newsfeeds(state: &ParserState, feed_id: Option<i64>) {
     let language = utils::truncate_string(&state.channel_language, 8);
     let item_count = utils::truncate_int(state.item_count);
 
-    let podcast_owner = utils::truncate_string(&state.channel_podcast_owner, 255);
+    let podcast_owner = if !state.channel_podcast_owner.is_empty() {
+        utils::truncate_string(&state.channel_podcast_owner, 255)
+    } else {
+        utils::truncate_string(&state.channel_itunes_owner_email, 255)
+    };
 
     let current_time = now_ts();
     let past_pub_dates: Vec<i64> = state.item_pubdates.clone()
@@ -164,19 +168,21 @@ pub fn write_newsfeeds(state: &ParserState, feed_id: Option<i64>) {
 pub fn write_nfitems(state: &ParserState, feed_id: Option<i64>) {
     let title = utils::truncate_string(
         if !state.itunes_title.is_empty() {
-            &state.itunes_title
+            &state.itunes_title.trim()
         } else {
-            state.title.trim()
+            &state.title.trim()
         },
         1024,
     );
 
-    let description = if !state.itunes_summary.is_empty() {
-        &state.itunes_summary
+    let description = if !state.content.is_empty() { // atom content
+        &state.content
     } else if !state.content_encoded.is_empty() {
         &state.content_encoded
-    } else {
+    } else if !state.description.is_empty() {
         &state.description
+    } else {
+        &state.itunes_summary
     }.trim();
 
     let link = utils::sanitize_url(&state.link);
@@ -212,8 +218,6 @@ pub fn write_nfitems(state: &ParserState, feed_id: Option<i64>) {
         utils::truncate_string(&guessed, 128)
     };
 
-    let itunes_duration = utils::time_to_seconds(&state.itunes_duration);
-
     let itunes_season = state.itunes_season
         .parse::<i32>()
         .ok()
@@ -229,8 +233,6 @@ pub fn write_nfitems(state: &ParserState, feed_id: Option<i64>) {
     } else {
         utils::sanitize_url(&state.item_image)
     };
-
-
 
 
 //Set a time in the feed obj to use as the "lastupdate" time
@@ -260,14 +262,14 @@ pub fn write_nfitems(state: &ParserState, feed_id: Option<i64>) {
             JsonValue::from(link),
             JsonValue::from(description),
             JsonValue::from(guid),
-            JsonValue::from(state.pub_date.clone()),
+            JsonValue::from(state.pub_date),
             JsonValue::from(enclosure_url),
             JsonValue::from(enclosure_length),
             JsonValue::from(enclosure_type),
             JsonValue::from(itunes_episode),
             JsonValue::from(state.itunes_episode_type.clone()),
             JsonValue::from(state.itunes_explicit),
-            JsonValue::from(itunes_duration),
+            JsonValue::from(state.itunes_duration),
             JsonValue::from(image),
             JsonValue::from(itunes_season),
         ],
@@ -296,7 +298,7 @@ pub fn write_nfguids(state: &ParserState, feed_id: Option<i64>) {
 }
 
 pub fn write_pubsub(state: &ParserState, feed_id: Option<i64>) {
-    if state.pubsub_hub_url.is_empty() && state.pubsub_self_url.is_empty() {
+    if state.channel_pubsub_hub_url.is_empty() && state.channel_pubsub_self_url.is_empty() {
         return;
     }
 
@@ -309,8 +311,8 @@ pub fn write_pubsub(state: &ParserState, feed_id: Option<i64>) {
         ],
         values: vec![
             match feed_id { Some(v) => JsonValue::from(v), None => JsonValue::Null },
-            JsonValue::from(state.pubsub_hub_url.to_string()),
-            JsonValue::from(state.pubsub_self_url.to_string()),
+            JsonValue::from(state.channel_pubsub_hub_url.to_string()),
+            JsonValue::from(state.channel_pubsub_self_url.to_string()),
         ],
         feed_id,
     };
@@ -342,6 +344,7 @@ pub fn write_nffunding(state: &ParserState, feed_id: Option<i64>) {
 }
 
 pub fn write_nfcategories(state: &ParserState, feed_id: Option<i64>) {
+return;
     if state.channel_categories_raw.is_empty() {
         return;
     }

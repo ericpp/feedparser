@@ -11,10 +11,10 @@ pub fn on_start(state: &mut ParserState) {
     state.description.clear();
     state.itunes_summary.clear();
     state.content_encoded.clear();
-    state.pub_date.clear();
+    state.pub_date = 0;
     state.guid.clear();
 
-    state.itunes_duration.clear();
+    state.itunes_duration = 0;
     state.itunes_episode.clear();
     state.itunes_season.clear();
     state.itunes_episode_type.clear();
@@ -88,19 +88,16 @@ pub fn on_end(feed_id: Option<i64>, state: &mut ParserState) {
         outputs::write_nfitem_value_from_block(state, feed_id, value_type, &block);
     }
 
-    let pub_date_ts = utils::parse_pub_date_to_unix(state.pub_date.trim())
-        .unwrap_or_else(|| state.pub_date.trim().parse::<i64>().unwrap_or(0));
-
-    state.item_pubdates.push(pub_date_ts);
+    state.item_pubdates.push(state.pub_date);
     state.item_count += 1;
 
     match state.newest_item_pubdate {
-        Some(v) if v >= pub_date_ts => {}
-        _ => state.newest_item_pubdate = Some(pub_date_ts),
+        Some(v) if v >= state.pub_date => {}
+        _ => state.newest_item_pubdate = Some(state.pub_date),
     }
     match state.oldest_item_pubdate {
-        Some(v) if v <= pub_date_ts => {}
-        _ => state.oldest_item_pubdate = Some(pub_date_ts),
+        Some(v) if v <= state.pub_date => {}
+        _ => state.oldest_item_pubdate = Some(state.pub_date),
     }
 
     let hash_title = if !state.itunes_title.trim().is_empty() {

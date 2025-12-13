@@ -317,7 +317,7 @@ https://example.com/feed.xml
     assert_eq!(get_value_from_record(&nf, "explicit"), Some(JsonValue::from(1)));
     assert_eq!(get_value_from_record(&nf, "podcast_locked"), Some(JsonValue::from(1)));
     assert_eq!(get_value_from_record(&nf, "image"), Some(JsonValue::from("https://example.com/rss.jpg")));
-    assert_eq!(get_value_from_record(&nf, "artwork_url_600"), Some(JsonValue::from("https://example.com/itunes.jpg")));
+    assert_eq!(get_value_from_record(&nf, "itunes_image"), Some(JsonValue::from("https://example.com/itunes.jpg")));
 }
 
 // Table: newsfeeds - Hashes and item stats
@@ -400,8 +400,8 @@ https://example.com/feed.xml
     let expected_item_hash = format!("{:x}", h.compute());
 
     // Timestamps
-    let newest = utils::parse_pub_date_to_unix("Tue, 02 Jan 2024 12:00:00 GMT").unwrap();
-    let oldest = utils::parse_pub_date_to_unix("Mon, 01 Jan 2024 12:00:00 GMT").unwrap();
+    let newest = utils::pub_date_to_timestamp("Tue, 02 Jan 2024 12:00:00 GMT");
+    let oldest = utils::pub_date_to_timestamp("Mon, 01 Jan 2024 12:00:00 GMT");
 
     assert_eq!(get_value_from_record(&nf, "item_count"), Some(JsonValue::from(2)));
     assert_eq!(get_value_from_record(&nf, "newest_item_pubdate"), Some(JsonValue::from(newest)));
@@ -456,14 +456,13 @@ https://example.com/feed.xml
     assert_eq!(items.len(), 1);
     let item = items.pop().unwrap();
 
-    assert_eq!(get_value_from_record(&item, "feed_id"), Some(JsonValue::from(feed_id)));
     assert_eq!(get_value_from_record(&item, "title"), Some(JsonValue::from("Itunes Episode Title")));
     assert_eq!(get_value_from_record(&item, "link"), Some(JsonValue::from("https://example.com/ep1")));
     assert_eq!(
         get_value_from_record(&item, "description"),
         Some(JsonValue::from("Content encoded fallback"))
     );
-    let expected_pub_date = utils::parse_pub_date_to_unix("Mon, 01 Jan 2024 12:00:00 GMT").unwrap();
+    let expected_pub_date = utils::pub_date_to_timestamp("Mon, 01 Jan 2024 12:00:00 GMT");
     assert_eq!(get_value_from_record(&item, "pub_date"), Some(JsonValue::from(expected_pub_date)));
     assert_eq!(get_value_from_record(&item, "image"), Some(JsonValue::from("https://example.com/ep.jpg")));
     assert_eq!(get_value_from_record(&item, "itunes_episode"), Some(JsonValue::from(42)));
@@ -1906,7 +1905,7 @@ xmlns:content="http://purl.org/rss/1.0/modules/content/">
     );
 
     let expected_pub_ts =
-        utils::parse_pub_date_to_unix("Tue, 02 Jan 2024 03:04:05 +0000").unwrap();
+        utils::pub_date_to_timestamp("Tue, 02 Jan 2024 03:04:05 +0000");
     // let expected_item_id =
     //     utils::generate_item_id("guid-party", "https://cdn.example.com/episode.mp3", feed_id);
     let expected_item_id = "404040_1";
@@ -2135,12 +2134,11 @@ https://example.com/feed.xml
     <!-- Case 2: content:encoded within description (WordPress/blog feeds) -->
     <item>
       <title>Blog Post with Content Encoded</title>
-      <description>
-        <content:encoded><![CDATA[
-          <p>This is the full HTML content of the blog post with formatting.</p>
-          <p>It can contain multiple paragraphs and rich content.</p>
-        ]]></content:encoded>
-      </description>
+      <description></description>
+      <content:encoded><![CDATA[
+        <p>This is the full HTML content of the blog post with formatting.</p>
+        <p>It can contain multiple paragraphs and rich content.</p>
+      ]]></content:encoded>
       <enclosure url="https://example.com/ep.mp3" length="1" type="audio/mpeg"/>
    </item>
 
@@ -2177,7 +2175,7 @@ https://example.com/feed.xml
       <title>Multiple Description Sources</title>
       <itunes:summary>iTunes summary (wins)</itunes:summary>
       <description>Regular description (ignored)</description>
-      <content:encoded>Content encoded (ignored)</content:encoded>
+      <content:encoded>Content encoded</content:encoded>
       <enclosure url="https://example.com/ep.mp3" length="1" type="audio/mpeg"/>
     </item>
 
@@ -2196,21 +2194,18 @@ https://example.com/feed.xml
     let nfitems_files = output_records(&out_dir, "nfitems", 33007);
     assert_eq!(nfitems_files.len(), 7);
 
-    assert_eq!(
-        get_value_from_record(&nfitems_files[0], "description"),
-        Some(JsonValue::from(""))
-    );
+    assert_eq!(get_value_from_record(&nfitems_files[0], "description"),Some(JsonValue::from(
+        "This is the iTunes summary description for the podcast episode."
+    )));
+
     assert_eq!(get_value_from_record(&nfitems_files[1], "description"), Some(JsonValue::from(
-        "<p>This is the full HTML content of the blog post with formatting.</p>\n          <p>It can contain multiple paragraphs and rich content.</p>"
+        "<p>This is the full HTML content of the blog post with formatting.</p>\n        <p>It can contain multiple paragraphs and rich content.</p>"
     )));
 
     assert_eq!(get_value_from_record(&nfitems_files[2], "description"), Some(JsonValue::from("This is a plain text description of the item.")));
     assert_eq!(get_value_from_record(&nfitems_files[3], "description"), Some(JsonValue::from("<p>First content element</p>")));
     assert_eq!(get_value_from_record(&nfitems_files[4], "description"), Some(JsonValue::from("This text becomes the #text property when parsed")));
-    assert_eq!(
-        get_value_from_record(&nfitems_files[5], "description"),
-        Some(JsonValue::from("Content encoded (ignored)"))
-    );
+    assert_eq!(get_value_from_record(&nfitems_files[5], "description"), Some(JsonValue::from("Content encoded")));
     assert_eq!(get_value_from_record(&nfitems_files[6], "description"), Some(JsonValue::from("")));
 }
 

@@ -27,8 +27,8 @@ pub fn on_start(state: &mut ParserState) {
     state.in_channel_podcast_funding = false;
     state.channel_podcast_funding_url.clear();
     state.channel_podcast_funding_text.clear();
-    state.pubsub_hub_url.clear();
-    state.pubsub_self_url.clear();
+    state.channel_pubsub_hub_url.clear();
+    state.channel_pubsub_self_url.clear();
     state.channel_categories.clear();
     state.channel_categories_raw.clear();
     state.in_standard_category = false;
@@ -39,7 +39,7 @@ pub fn on_start(state: &mut ParserState) {
     state.newest_item_pubdate = None;
     state.oldest_item_pubdate = None;
     state.item_hash = md5::Context::new();
-    state.channel_pub_date.clear();
+    state.channel_pub_date = 0;
 }
 
 pub fn on_end(feed_id: Option<i64>, state: &mut ParserState) {

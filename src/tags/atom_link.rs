@@ -41,13 +41,13 @@ println!("state.in_item: {}, state.in_channel: {}, state.link: {}, state.channel
             }
         }
         "hub" => {
-            if state.in_channel && !state.in_item && state.pubsub_hub_url.is_empty() {
-                state.pubsub_hub_url = href;
+            if state.in_channel && !state.in_item && state.channel_pubsub_hub_url.is_empty() {
+                state.channel_pubsub_hub_url = href;
             }
         },
         "self" => {
-            if state.in_channel && !state.in_item && state.pubsub_self_url.is_empty() {
-                state.pubsub_self_url = href;
+            if state.in_channel && !state.in_item && state.channel_pubsub_self_url.is_empty() {
+                state.channel_pubsub_self_url = href;
             }
         },
         _ => {}
