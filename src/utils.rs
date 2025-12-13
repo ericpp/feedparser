@@ -6,12 +6,45 @@ use serde_json::{json, Value as JsonValue};
 
 use crate::parser_state::{ParserState, ValueRecipient};
 
-pub fn md5_hex_from_parts(parts: &[&str]) -> String {
-    let mut ctx = md5::Context::new();
-    for part in parts {
-        ctx.consume(part.trim().as_bytes());
+
+
+pub fn clean_string(s: &str) -> String {
+    s.trim().replace(r#"(\r\n|\n|\r)"#, "")
+}
+
+pub fn truncate_string(s: &str, length: usize) -> String {
+    s.chars().take(length).collect()
+}
+
+pub fn truncate_int(number: i32) -> i32 {
+    number.clamp(-2147483647, 2147483647)
+}
+
+fn contains_non_latin_codepoints(s: &str) -> bool {
+    s.chars().any(|c| c as u32 > 0x00FF)
+}
+
+fn replace_non_latin_characters(s: &str) -> String {
+    s.replace(r#"[^\x00-\x80]"#, " ")
+}
+
+pub fn sanitize_url(url: &str) -> String {
+    if url.is_empty() {
+        return String::new();
     }
-    format!("{:x}", ctx.compute())
+
+    if contains_non_latin_codepoints(url) {
+        let encoded = urlencoding::encode(&url);
+        let mut new_url = truncate_string(&encoded, 768);
+
+        if contains_non_latin_codepoints(&new_url) {
+            new_url = replace_non_latin_characters(&new_url);
+        }
+
+        return truncate_string(&new_url, 768);
+    }
+
+    truncate_string(url, 768)
 }
 
 pub fn parse_pub_date_to_unix(raw: &str) -> Option<i64> {
@@ -28,57 +61,6 @@ pub fn parse_pub_date_to_unix(raw: &str) -> Option<i64> {
         .or_else(|_| DateTime::parse_from_str(t, "%a, %d %b %Y %H:%M:%S GMT"))
         .map(|dt| dt.timestamp())
         .ok()
-}
-
-pub fn time_to_seconds(time_string: &str) -> i32 {
-    let parts: Vec<&str> = time_string.split(':').collect();
-
-    match parts.len() {
-        2 => match (parts[0].parse::<i32>(), parts[1].parse::<i32>()) {
-            (Ok(minutes), Ok(secs)) => {
-                minutes * 60 + secs
-            }
-            _ => 0,
-        },
-        3 => match (parts[0].parse::<i32>(), parts[1].parse::<i32>(), parts[2].parse::<i32>()) {
-            (Ok(hours), Ok(minutes), Ok(secs)) => {
-                hours * 3600 + minutes * 60 + secs
-            }
-            _ => 0,
-        },
-        _ => 0,
-    }
-}
-
-pub fn truncate_int(number: i32) -> i32 {
-    number.clamp(-2147483647, 2147483647)
-}
-
-pub fn parse_itunes_duration(raw: &str) -> i32 {
-    if let Ok(seconds) = raw.parse::<i32>() {
-        truncate_int(seconds)
-    } else {
-        time_to_seconds(raw)
-    }
-}
-
-pub fn guess_enclosure_type(url: &str) -> String {
-    let lower = url.to_ascii_lowercase();
-    if lower.ends_with(".mp3") || lower.ends_with(".mpeg") {
-        "audio/mpeg".to_string()
-    } else if lower.ends_with(".m4a") || lower.ends_with(".mp4") {
-        "audio/mp4".to_string()
-    } else if lower.ends_with(".ogg") || lower.ends_with(".oga") {
-        "audio/ogg".to_string()
-    } else if lower.ends_with(".wav") {
-        "audio/wav".to_string()
-    } else if lower.ends_with(".webm") {
-        "audio/webm".to_string()
-    } else if lower.ends_with(".flac") {
-        "audio/flac".to_string()
-    } else {
-        "audio/mpeg".to_string()
-    }
 }
 
 pub fn calculate_update_frequency(pubdates: &[i64]) -> i32 {
@@ -128,34 +110,177 @@ pub fn calculate_update_frequency(pubdates: &[i64]) -> i32 {
     0
 }
 
+//Get a mime-type string for an unknown media enclosure
+pub fn guess_enclosure_type(url: &str) -> String {
+    if url.contains(".m4v") {
+        return "video/mp4".to_string();
+    }
+    if url.contains(".mp4") {
+        return "video/mp4".to_string();
+    }
+    if url.contains(".avi") {
+        return "video/avi".to_string();
+    }
+    if url.contains(".mov") {
+        return "video/quicktime".to_string();
+    }
+    if url.contains(".mp3") {
+        return "audio/mpeg".to_string();
+    }
+    if url.contains(".m4a") {
+        return "audio/mp4".to_string();
+    }
+    if url.contains(".wav") {
+        return "audio/wav".to_string();
+    }
+    if url.contains(".ogg") {
+        return "audio/ogg".to_string();
+    }
+    if url.contains(".wmv") {
+        return "video/x-ms-wmv".to_string();
+    }
+
+    "".to_string()
+}
+
+pub fn time_to_seconds(time_string: &str) -> i32 {
+    let fallback = || 30 * 60; // Default 30 minutes like JS timeToSeconds Nan handling
+    let parts: Vec<&str> = time_string.split(':').collect();
+
+    match parts.len() {
+        2 => match (parts[0].parse::<i32>(), parts[1].parse::<i32>()) {
+            (Ok(minutes), Ok(secs)) => minutes * 60 + secs,
+            _ => fallback(),
+        },
+        3 => match (
+            parts[0].parse::<i32>(),
+            parts[1].parse::<i32>(),
+            parts[2].parse::<i32>(),
+        ) {
+            (Ok(hours), Ok(minutes), Ok(secs)) => hours * 3600 + minutes * 60 + secs,
+            _ => fallback(),
+        },
+        _ => fallback(),
+    }
+}
+
+////////////////
+
+
+const CATEGORY_LOOKUP: &[&str] = &[
+    "", "arts", "books", "design", "fashion", "beauty", "food", "performing", "visual", "business",
+    "careers", "entrepreneurship", "investing", "management", "marketing", "nonprofit", "comedy",
+    "interviews", "improv", "standup", "education", "courses", "howto", "language", "learning",
+    "selfimprovement", "fiction", "drama", "history", "health", "fitness", "alternative", "medicine",
+    "mental", "nutrition", "sexuality", "kids", "family", "parenting", "pets", "animals", "stories",
+    "leisure", "animation", "manga", "automotive", "aviation", "crafts", "games", "hobbies", "home",
+    "garden", "videogames", "music", "commentary", "news", "daily", "entertainment", "government",
+    "politics", "buddhism", "christianity", "hinduism", "islam", "judaism", "religion", "spirituality",
+    "science", "astronomy", "chemistry", "earth", "life", "mathematics", "natural", "nature", "physics",
+    "social", "society", "culture", "documentary", "personal", "journals", "philosophy", "places",
+    "travel", "relationships", "sports", "baseball", "basketball", "cricket", "fantasy", "football",
+    "golf", "hockey", "rugby", "running", "soccer", "swimming", "tennis", "volleyball", "wilderness",
+    "wrestling", "technology", "truecrime", "tv", "film", "aftershows", "reviews", "climate", "weather",
+    "tabletop", "role-playing", "cryptocurrency",
+];
+
+pub fn md5_hex_from_parts(parts: &[&str]) -> String {
+    let mut ctx = md5::Context::new();
+    for part in parts {
+        ctx.consume(part.trim().as_bytes());
+    }
+    format!("{:x}", ctx.compute())
+}
+
+pub fn parse_itunes_duration(raw: &str) -> i32 {
+    if let Ok(seconds) = raw.parse::<i32>() {
+        truncate_int(seconds)
+    } else {
+        time_to_seconds(raw)
+    }
+}
+
+
 pub fn build_category_ids(raw: &[String]) -> Vec<i32> {
-    // index 0 unused to preserve positional mapping
+    let mut cats: Vec<String> = raw
+        .iter()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if cats.contains(&"video".to_string()) && cats.contains(&"games".to_string()) {
+        cats.push("videogames".to_string());
+    }
+    if cats.contains(&"true".to_string()) && cats.contains(&"crime".to_string()) {
+        cats.push("truecrime".to_string());
+    }
+    if cats.contains(&"after".to_string()) && cats.contains(&"shows".to_string()) {
+        cats.push("aftershows".to_string());
+    }
+    if cats.contains(&"self".to_string()) && cats.contains(&"improvement".to_string()) {
+        cats.push("selfimprovement".to_string());
+    }
+    if cats.contains(&"how".to_string()) && cats.contains(&"to".to_string()) {
+        cats.push("howto".to_string());
+    }
+
     let mut ids = vec![0_i32; 11];
     let mut seen = 0;
-    for name in raw {
-        if seen >= 10 {
+    for name in cats {
+        // Match JS: stop after the first 8 valid categories
+        if seen >= 8 {
             break;
         }
-        let code = match name.trim().to_ascii_lowercase().as_str() {
-            "technology" => 102,
-            "video" => 48,
-            "games" => 52,
-            _ => 0,
-        };
-        if code > 0 {
-            seen += 1;
-            ids[seen] = code;
+        let normalized = name.replace(' ', "").replace('-', "");
+        if let Some(idx) = CATEGORY_LOOKUP.iter().position(|v| v == &normalized) {
+            if idx > 0 {
+                seen += 1;
+                ids[seen] = idx as i32;
+            }
         }
     }
     ids
 }
 
 pub fn truncate_str(s: &str, max_len: usize) -> String {
-    let mut out = s.trim().to_string();
-    if out.len() > max_len {
-        out.truncate(max_len);
+    // Walk chars so we do not split multi-byte characters when truncating
+    let mut out = String::new();
+    for (idx, ch) in s.trim().chars().enumerate() {
+        if idx >= max_len {
+            break;
+        }
+        out.push(ch);
     }
     out
+}
+
+pub fn truncate_preserve(s: &str, max_len: usize) -> String {
+    // Match JS substring-style behaviour without breaking UTF-8 boundaries
+    let mut out = String::new();
+    for (idx, ch) in s.chars().enumerate() {
+        if idx >= max_len {
+            break;
+        }
+        out.push(ch);
+    }
+    out
+}
+
+pub fn transcript_type_from_mime(mime: &str) -> i32 {
+    let lower = mime.to_ascii_lowercase();
+    if lower.contains("json") {
+        1
+    } else if lower.contains("srt") {
+        2
+    } else if lower.contains("vtt") {
+        3
+    } else {
+        0
+    }
+}
+
+pub fn parse_f64_or_zero(raw: &str) -> f64 {
+    raw.trim().parse::<f64>().unwrap_or(0.0)
 }
 
 pub fn build_value_block(state: &ParserState) -> Option<String> {

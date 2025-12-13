@@ -12,7 +12,7 @@ pub mod generator;
 pub mod guid;
 pub mod image;
 pub mod item;
-pub mod logo;
+pub mod atom_logo;
 pub mod itunes_author;
 pub mod itunes_duration;
 pub mod itunes_episode;
@@ -42,8 +42,16 @@ pub mod url;
 
 pub fn dispatch_start(current_element: &str, attributes: &[OwnedAttribute], state: &mut ParserState) {
     match current_element {
-        "channel" | "feed" => channel::on_start(state),
-        "item" | "entry" => item::on_start(state),
+        "channel" => {
+            state.feed_type = 0;
+            channel::on_start(state);
+        }
+        "atom:feed" => {
+            state.feed_type = 1;
+            channel::on_start(state);
+        }
+        "item" | "atom:entry" => item::on_start(state),
+        "link" => link::on_start(current_element, attributes, state),
         "image" => image::on_start(state),
         "itunes:duration" => itunes_duration::on_start(state),
         "itunes:owner" => itunes_owner::on_start(state),
@@ -58,28 +66,33 @@ pub fn dispatch_start(current_element: &str, attributes: &[OwnedAttribute], stat
             if state.in_item {
                 state.in_podcast_alternate_enclosure = true;
             }
-        }
+        },
+        "atom:link" => atom_link::on_start(current_element, attributes, state),
+        "itunes:category" => category::on_start(current_element, attributes, state),
+        "itunes:image" => itunes_image::on_start(current_element, attributes, state),
+        "podcast:funding" => podcast_funding::on_start(current_element, attributes, state),
+        "podcast:locked" => podcast_locked::on_start(current_element, attributes, state),
         _ => {}
     }
 
     // Namespace-sensitive handlers
-    itunes_image::on_start(current_element, attributes, state);
-    podcast_funding::on_start(current_element, attributes, state);
-    podcast_locked::on_start(current_element, attributes, state);
-    category::on_start(current_element, attributes, state);
-    atom_link::on_start(current_element, attributes, state);
+    // itunes_image::on_start(current_element, attributes, state);
+    // podcast_funding::on_start(current_element, attributes, state);
+    // podcast_locked::on_start(current_element, attributes, state);
+    // category::on_start(current_element, attributes, state);
+    // atom_link::on_start(current_element, attributes, state);
 }
 
 pub fn dispatch_text(current_element: &str, data: &str, state: &mut ParserState) {
     match current_element {
         "title" => title::on_text(data, state),
         "link" => link::on_text(data, state),
-        "description" => description::on_text(data, state),
+        "description" | "atom:subtitle" => description::on_text(data, state),
         "subtitle" => description::on_text(data, state),
         "summary" => description::on_text(data, state),
         "content:encoded" => content_encoded::on_text(data, state),
         "pubDate" => pub_date::on_text(data, state),
-        "updated" | "published" => pub_date::on_text(data, state),
+        "atom:updated" | "published" => pub_date::on_text(data, state),
         "language" => language::on_text(data, state),
         "generator" => generator::on_text(data, state),
         "guid" => guid::on_text(data, state),
@@ -97,7 +110,7 @@ pub fn dispatch_text(current_element: &str, data: &str, state: &mut ParserState)
         "itunes:new-feed-url" => itunes_new_feed_url::on_text(data, state),
         "podcast:guid" => podcast_guid::on_text(data, state),
         "url" => url::on_text(data, state),
-        "logo" => logo::on_text(data, state),
+        "atom:logo" => atom_logo::on_text(data, state),
         "content" => content::on_text(data, state),
         _ => {}
     }
@@ -113,8 +126,8 @@ pub fn dispatch_text(current_element: &str, data: &str, state: &mut ParserState)
 
 pub fn dispatch_end(current_element: &str, feed_id: Option<i64>, state: &mut ParserState) {
     match current_element {
-        "channel" | "feed" => channel::on_end(feed_id, state),
-        "item" | "entry" => item::on_end(feed_id, state),
+        "channel" | "atom:feed" => channel::on_end(feed_id, state),
+        "item" | "atom:entry" => item::on_end(feed_id, state),
         "image" => image::on_end(state),
         "itunes:owner" => itunes_owner::on_end(state),
         "category" | "itunes:category" => category::on_end(current_element, state),

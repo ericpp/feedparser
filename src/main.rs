@@ -1,7 +1,7 @@
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read};
 use std::io::Cursor;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
 use std::sync::OnceLock;
 use std::path::{PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH, Instant};
@@ -180,59 +180,13 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
         .any(|b| !matches!(b, b' ' | b'\t' | b'\r' | b'\n'));
 
     if !has_non_whitespace {
-        // XML payload is empty or whitespace-only: write a single channel-level record with blank fields
-        let record = SqlInsert {
-            table: "newsfeeds".to_string(),
-            columns: vec![
-                "feed_id".to_string(),
-                "title".to_string(),
-                "link".to_string(),
-                "description".to_string(),
-            ],
-            values: vec![
-                match feed_id { Some(v) => JsonValue::from(v), None => JsonValue::Null },
-                JsonValue::from(String::new()),
-                JsonValue::from(String::new()),
-                JsonValue::from(String::new()),
-            ],
-            feed_id,
-        };
-
-        // Use per-run outputs subfolder established at startup
-        let out_dir: PathBuf = OUTPUT_SUBDIR
-            .get()
-            .cloned()
-            .unwrap_or_else(|| PathBuf::from("outputs"));
-        if let Err(e) = fs::create_dir_all(&out_dir) {
-            eprintln!("Failed to create outputs directory '{}': {}", out_dir.display(), e);
-        }
-
-        // Compute counter (1-based) and build filename
-        let counter_val = GLOBAL_COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
-        let fid_for_name = feed_id
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "NULL".to_string());
-        let file_name = format!("{}_{}_{}.json", counter_val, "newsfeeds", fid_for_name);
-        let file_path = out_dir.join(file_name);
-
-        match serde_json::to_string(&record) {
-            Ok(serialized) => {
-                if let Err(e) = fs::write(&file_path, serialized) {
-                    eprintln!("Failed to write {}: {}", file_path.display(), e);
-                } else {
-                    println!(
-                        "Empty XML payload detected for '{}'; wrote blank newsfeeds record to {}",
-                        _source_name,
-                        file_path.display()
-                    );
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to serialize blank newsfeeds record: {}", e);
-            }
-        }
-
-        // Nothing else to do for this file
+        // XML payload is empty or whitespace-only: emit a single newsfeeds row matching partytime shape
+        let mut state = ParserState::default();
+        state.run_timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        outputs::write_newsfeeds(&state, feed_id);
         return;
     }
 
@@ -242,6 +196,10 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
 
     // Parser state holds all flags and accumulators used by handlers
     let mut state = ParserState::default();
+    state.run_timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
 
     fn get_prefixed_name(name: &OwnedName) -> String {
         let prefix = name.prefix.clone();
@@ -256,6 +214,10 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
             || matches!(name.namespace.as_deref(), Some("http://podcastindex.org/namespace/1.0"))
         ) {
             format!("podcast:{}", local_name)
+        } else if name.prefix.as_deref() == Some("atom")
+            || matches!(name.namespace.as_deref(), Some("http://www.w3.org/2005/Atom")
+        ) {
+            format!("atom:{}", local_name)
         } else if prefix.is_some() {
             format!("{}:{}", prefix.unwrap(), local_name)
         } else {

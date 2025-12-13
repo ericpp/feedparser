@@ -39,6 +39,7 @@ pub fn on_start(state: &mut ParserState) {
     state.newest_item_pubdate = None;
     state.oldest_item_pubdate = None;
     state.item_hash = md5::Context::new();
+    state.channel_pub_date.clear();
 }
 
 pub fn on_end(feed_id: Option<i64>, state: &mut ParserState) {
@@ -49,7 +50,7 @@ pub fn on_end(feed_id: Option<i64>, state: &mut ParserState) {
         outputs::write_nffunding(state, feed_id);
         outputs::write_nfcategories(state, feed_id);
         if let Some((value_type, block)) = state.channel_value_pending.take() {
-            outputs::write_nfvalue_from_block(feed_id, value_type, &block);
+            outputs::write_nfvalue_from_block(state, feed_id, value_type, &block);
         }
         state.in_channel = false;
     }

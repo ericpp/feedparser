@@ -12,6 +12,10 @@ pub struct ValueRecipient {
 }
 
 pub struct ParserState {
+    // Feed-level metadata
+    pub feed_type: i32,
+    pub run_timestamp: i64,
+
     // Channel-level flags and fields
     pub in_channel: bool,
     pub in_channel_image: bool,
@@ -44,6 +48,7 @@ pub struct ParserState {
     pub channel_categories_raw: Vec<String>,
     pub channel_value_pending: Option<(i32, String)>,
     pub channel_value_has_lightning: bool,
+    pub channel_pub_date: String,
 
     // Item-level flags and fields
     pub in_item: bool,
@@ -114,6 +119,8 @@ impl Default for ParserState {
             in_channel_itunes_owner: false,
             in_channel_podcast_locked: false,
             in_channel_podcast_funding: false,
+            feed_type: 0,
+            run_timestamp: 0,
             in_standard_category: false,
             channel_title: String::new(),
             channel_link: String::new(),
@@ -140,6 +147,7 @@ impl Default for ParserState {
             channel_categories_raw: Vec::new(),
             channel_value_pending: None,
             channel_value_has_lightning: false,
+            channel_pub_date: String::new(),
             in_item: false,
             item_written: false,
             current_element: String::new(),

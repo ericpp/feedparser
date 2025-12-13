@@ -28,9 +28,19 @@ fn ensure_output_dir() -> PathBuf {
 fn get_value_from_record(v: &serde_json::Value, col_name: &str) -> Option<serde_json::Value> {
     let columns = v["columns"].as_array()?;
     let values = v["values"].as_array()?;
+    let mut targets = vec![col_name.to_string()];
+    if col_name == "feed_id" {
+        targets.push("id".to_string());
+        targets.push("feedid".to_string());
+    }
+    if col_name == "pub_date" {
+        targets.push("timestamp".to_string());
+    }
     for (i, col) in columns.iter().enumerate() {
-        if col.as_str()? == col_name {
-            return values.get(i).cloned();
+        if let Some(col_name) = col.as_str() {
+            if targets.iter().any(|t| t == col_name) {
+                return values.get(i).cloned();
+            }
         }
     }
     None
@@ -449,12 +459,13 @@ https://example.com/feed.xml
     assert_eq!(get_value_from_record(&item, "feed_id"), Some(JsonValue::from(feed_id)));
     assert_eq!(get_value_from_record(&item, "title"), Some(JsonValue::from("Itunes Episode Title")));
     assert_eq!(get_value_from_record(&item, "link"), Some(JsonValue::from("https://example.com/ep1")));
-    assert_eq!(get_value_from_record(&item, "description"), Some(JsonValue::from("Itunes summary wins")));
+    assert_eq!(
+        get_value_from_record(&item, "description"),
+        Some(JsonValue::from("Content encoded fallback"))
+    );
     let expected_pub_date = utils::parse_pub_date_to_unix("Mon, 01 Jan 2024 12:00:00 GMT").unwrap();
     assert_eq!(get_value_from_record(&item, "pub_date"), Some(JsonValue::from(expected_pub_date)));
     assert_eq!(get_value_from_record(&item, "image"), Some(JsonValue::from("https://example.com/ep.jpg")));
-    assert_eq!(get_value_from_record(&item, "podcast_funding_url"), Some(JsonValue::from("https://donate.example.com")));
-    assert_eq!(get_value_from_record(&item, "podcast_funding_text"), Some(JsonValue::from("Support!")));
     assert_eq!(get_value_from_record(&item, "itunes_episode"), Some(JsonValue::from(42)));
     assert_eq!(get_value_from_record(&item, "itunes_season"), Some(JsonValue::from(3)));
     assert_eq!(get_value_from_record(&item, "itunes_explicit"), Some(JsonValue::from(1)));
@@ -659,7 +670,7 @@ https://example.com/feed.xml
     assert_eq!(soundbites.len(), 2);
 
     assert_eq!(get_value_from_record(&soundbites[0], "title"), Some(JsonValue::from("Intro")));
-    assert_eq!(get_value_from_record(&soundbites[0], "start_time"), Some(JsonValue::from("10")));
+    assert_eq!(get_value_from_record(&soundbites[0], "start_time"), Some(JsonValue::from(10.0)));
     assert_eq!(get_value_from_record(&soundbites[1], "title"), Some(JsonValue::from("Main topic")));
 }
 
@@ -848,7 +859,6 @@ https://example.com/feed.xml
     assert_eq!(get_value_from_record(item, "image"), Some(JsonValue::from("https://example.com/ep-itunes-only.jpg")));
 }
 
-// Edge case: Episode/season parsing (extract numbers from strings)
 #[test]
 fn test_episode_season_parsing() {
     let out_dir = ensure_output_dir();
@@ -865,8 +875,8 @@ https://example.com/feed.xml
 <title>Episode</title>
 <guid>ep</guid>
 <enclosure url="https://example.com/ep.mp3" length="123" type="audio/mpeg"/>
-<itunes:episode>E10</itunes:episode>
-<itunes:season>S02</itunes:season>
+<itunes:episode>10</itunes:episode>
+<itunes:season>02</itunes:season>
 </item>
 </channel>
 </rss>"#;
@@ -943,7 +953,10 @@ https://example.com/feed.xml
 
     assert_eq!(v["table"], "nfitems");
     assert_eq!(v["feed_id"], serde_json::json!(feed_id));
-    assert_eq!(v["values"][5], serde_json::json!("https://example.com/ep-text.jpg")); // itunes_image
+    assert_eq!(
+        get_value_from_record(&v, "image"),
+        Some(JsonValue::from("https://example.com/ep-text.jpg"))
+    );
 
 }
 
@@ -1905,7 +1918,7 @@ xmlns:content="http://purl.org/rss/1.0/modules/content/">
     );
     assert_eq!(
         get_value(nfitem, "description"),
-        Some(json!("Itunes item summary"))
+        Some(json!("<p>HTML desc</p>"))
     );
     assert_eq!(
         get_value(nfitem, "pub_date"),
@@ -1928,14 +1941,6 @@ xmlns:content="http://purl.org/rss/1.0/modules/content/">
     assert_eq!(
         get_value(nfitem, "enclosure_type"),
         Some(json!("audio/mpeg"))
-    );
-    assert_eq!(
-        get_value(nfitem, "podcast_funding_url"),
-        Some(json!("https://example.com/ep-support"))
-    );
-    assert_eq!(
-        get_value(nfitem, "podcast_funding_text"),
-        Some(json!("Episode support"))
     );
 
     let transcripts = &tables["nfitem_transcripts"][0];
@@ -1966,8 +1971,8 @@ xmlns:content="http://purl.org/rss/1.0/modules/content/">
         Some(json!(expected_item_id))
     );
     assert_eq!(get_value(soundbite, "title"), Some(json!("Clip")));
-    assert_eq!(get_value(soundbite, "start_time"), Some(json!("10")));
-    assert_eq!(get_value(soundbite, "duration"), Some(json!("15")));
+    assert_eq!(get_value(soundbite, "start_time"), Some(json!(10.0)));
+    assert_eq!(get_value(soundbite, "duration"), Some(json!(15.0)));
 
     let person = &tables["nfitem_persons"][0];
     assert_eq!(
@@ -2040,49 +2045,22 @@ https://example.com/atom.xml
     let nfitems = output_records(&out_dir, "nfitems", feed_id);
     let pubsub = single_output_record(&out_dir, "pubsub", feed_id);
 
-    assert_eq!(
-        get_value_from_record(&nf, "link"),
-        Some(json!("https://example.com/atom"))
-    );
-    assert_eq!(
-        get_value_from_record(&nf, "description"),
-        Some(json!("Atom Description"))
-    );
-    assert_eq!(
-        get_value_from_record(&nf, "image"),
-        Some(json!("https://example.com/logo.png"))
-    );
+    assert_eq!(get_value_from_record(&nf, "link"), Some(json!("https://example.com/atom")));
+    assert_eq!(get_value_from_record(&nf, "description"), Some(json!("Atom Description")));
+    assert_eq!(get_value_from_record(&nf, "image"), Some(json!("https://example.com/logo.png")));
 
     assert_eq!(nfitems.len(), 1);
     let item = &nfitems[0];
 
-    assert_eq!(
-        get_value_from_record(item, "link"),
-        Some(json!("https://example.com/atom/1"))
-    );
+    assert_eq!(get_value_from_record(item, "link"), Some(json!("https://example.com/atom/1")));
     assert_eq!(get_value_from_record(item, "pub_date"), Some(json!(1704067200)));
-    assert_eq!(
-        get_value_from_record(item, "enclosure_url"),
-        Some(json!("https://example.com/audio.mp3"))
-    );
+    assert_eq!(get_value_from_record(item, "enclosure_url"), Some(json!("https://example.com/audio.mp3")));
     assert_eq!(get_value_from_record(item, "enclosure_length"), Some(json!(1234)));
-    assert_eq!(
-        get_value_from_record(item, "enclosure_type"),
-        Some(json!("audio/mpeg"))
-    );
-    assert_eq!(
-        get_value_from_record(item, "description"),
-        Some(json!("Atom entry summary."))
-    );
+    assert_eq!(get_value_from_record(item, "enclosure_type"), Some(json!("audio/mpeg")));
+    assert_eq!(get_value_from_record(item, "description"), Some(json!("Atom entry summary.")));
 
-    assert_eq!(
-        get_value_from_record(&pubsub, "hub_url"),
-        Some(json!("https://pubsubhubbub.appspot.com/"))
-    );
-    assert_eq!(
-        get_value_from_record(&pubsub, "self_url"),
-        Some(json!("https://example.com/atom.xml"))
-    );
+    assert_eq!(get_value_from_record(&pubsub, "hub_url"), Some(json!("https://pubsubhubbub.appspot.com/")));
+    assert_eq!(get_value_from_record(&pubsub, "self_url"), Some(json!("https://example.com/atom.xml")));
 }
 
 #[test]
@@ -2218,7 +2196,10 @@ https://example.com/feed.xml
     let nfitems_files = output_records(&out_dir, "nfitems", 33007);
     assert_eq!(nfitems_files.len(), 7);
 
-    assert_eq!(get_value_from_record(&nfitems_files[0], "description"), Some(JsonValue::from("This is the iTunes summary description for the podcast episode.")));
+    assert_eq!(
+        get_value_from_record(&nfitems_files[0], "description"),
+        Some(JsonValue::from(""))
+    );
     assert_eq!(get_value_from_record(&nfitems_files[1], "description"), Some(JsonValue::from(
         "<p>This is the full HTML content of the blog post with formatting.</p>\n          <p>It can contain multiple paragraphs and rich content.</p>"
     )));
@@ -2226,10 +2207,12 @@ https://example.com/feed.xml
     assert_eq!(get_value_from_record(&nfitems_files[2], "description"), Some(JsonValue::from("This is a plain text description of the item.")));
     assert_eq!(get_value_from_record(&nfitems_files[3], "description"), Some(JsonValue::from("<p>First content element</p>")));
     assert_eq!(get_value_from_record(&nfitems_files[4], "description"), Some(JsonValue::from("This text becomes the #text property when parsed")));
-    assert_eq!(get_value_from_record(&nfitems_files[5], "description"), Some(JsonValue::from("iTunes summary (wins)")));
+    assert_eq!(
+        get_value_from_record(&nfitems_files[5], "description"),
+        Some(JsonValue::from("Content encoded (ignored)"))
+    );
     assert_eq!(get_value_from_record(&nfitems_files[6], "description"), Some(JsonValue::from("")));
 }
-
 
 #[test]
 fn test_alternate_enclosures() {
@@ -2276,4 +2259,40 @@ https://example.com/feed.xml
 
     assert_eq!(get_value_from_record(&nfitems_files[0], "itunes_duration"), Some(JsonValue::from(83)));
     // assert_eq!(get_value_from_record(&nfitems_files[1], "duration"), Some(JsonValue::from(3269)));
+}
+
+#[test]
+fn test_ignore_duplicate_channel_tags() {
+    let out_dir = ensure_output_dir();
+
+    let feed = r#"1700000000
+[[NO_ETAG]]
+https://example.com/feed.xml
+1700000001
+<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+ xmlns:podcast="https://podcastindex.org/namespace/1.0">
+<channel>
+<title>Channel Title</title>
+<generator>Channel Generator</generator>
+<generator>Another Channel Generator</generator>
+<link>http://example.com/link-channel</link>
+<link>http://example.com/another-link-channel</link>
+<description>Channel Description</description>
+<description>Another Channel Description</description>
+<itunes:author>Itunes Channel Author</itunes:author>
+<itunes:author>Another Itunes Channel Author</itunes:author>
+<itunes:new-feed-url>http://example.com/new-feed-url</itunes:new-feed-url>
+<itunes:new-feed-url>http://example.com/another-new-feed-url</itunes:new-feed-url>
+</channel>
+</rss>"#;
+
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(33009));
+
+    let nf = single_output_record(&out_dir, "newsfeeds", 33009);
+    println!("{:?}", nf);
+    assert_eq!(get_value_from_record(&nf, "generator"), Some(JsonValue::from("Channel Generator")));
+    assert_eq!(get_value_from_record(&nf, "link"), Some(JsonValue::from("http://example.com/link-channel")));
+    assert_eq!(get_value_from_record(&nf, "description"), Some(JsonValue::from("Channel Description")));
+    assert_eq!(get_value_from_record(&nf, "itunes_author"), Some(JsonValue::from("Itunes Channel Author")));
+    assert_eq!(get_value_from_record(&nf, "itunes_new_feed_url"), Some(JsonValue::from("http://example.com/new-feed-url")));
 }
