@@ -261,6 +261,35 @@ https://www.ualrpublicradio.org/podcast/arts-letters/rss.xml
     assert_eq!(get_value_from_record(&v, "description"), Some(serde_json::json!("")));
 }
 
+#[test]
+fn test_html_entity_decoding() {
+    let out_dir = ensure_output_dir();
+
+    let feed = r#"1700000000
+[[NO_ETAG]]
+https://example.com/feed.xml
+1700000001
+<?xml version="1.0"?>
+<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+ xmlns:podcast="https://podcastindex.org/namespace/1.0">
+<channel>
+<title>HTML Entity Decoding</title>
+<link>https://example.com</link>
+<description><![CDATA[foo &copy; bar &ne; baz &#x1D306; qux]]></description>
+<podcast:locked owner="foo &copy; bar &ne; baz &#x1D306; qux">yes</podcast:locked>
+</channel>
+</rss>"#;
+
+    let feed_id = 2000_i64;
+    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
+
+    let nf = single_output_record(&out_dir, "newsfeeds", feed_id);
+
+    assert_eq!(get_value_from_record(&nf, "description"), Some(JsonValue::from("foo © bar ≠ baz 𝌆 qux")));
+    assert_eq!(get_value_from_record(&nf, "podcast_locked"), Some(JsonValue::from(1)));
+    assert_eq!(get_value_from_record(&nf, "podcast_owner"), Some(JsonValue::from("foo © bar ≠ baz 𝌆 qux")));
+}
+    
 // Table: newsfeeds - Complete field coverage
 #[test]
 fn test_newsfeeds_table() {
