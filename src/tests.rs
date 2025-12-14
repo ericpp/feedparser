@@ -505,24 +505,30 @@ https://example.com/feed.xml
 
     let feed_id = 2006_i64;
     process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
-    let transcripts = output_records(&out_dir, "nfitem_transcripts", feed_id);
+    let nfitems = output_records(&out_dir, "nfitems", feed_id);
 
-    assert_eq!(transcripts.len(), 3);
+    assert_eq!(nfitems.len(), 3);
 
-    // Type detection: JSON=1, SRT=2, VTT=3
+    // Type detection: JSON, SRT, VTT (stored as mime type strings)
     // Verify each type appears once (order may vary)
     let mut types = Vec::new();
-    for transcript in &transcripts {
-        if let Some(type_val) = get_value_from_record(transcript, "type") {
-            if let Some(t) = type_val.as_i64() {
-                types.push(t);
+    for item in &nfitems {
+        if let Some(transcripts_val) = get_value_from_record(item, "podcast_transcripts") {
+            if let Some(transcripts_array) = transcripts_val.as_array() {
+                for transcript in transcripts_array {
+                    if let Some(type_val) = transcript.get("type") {
+                        if let Some(t) = type_val.as_str() {
+                            types.push(t.to_string());
+                        }
+                    }
+                }
             }
         }
     }
 
-    assert!(types.contains(&1), "Should have JSON type (1)");
-    assert!(types.contains(&2), "Should have SRT type (2)");
-    assert!(types.contains(&3), "Should have VTT type (3)");
+    assert!(types.iter().any(|t| t.contains("json")), "Should have JSON type");
+    assert!(types.iter().any(|t| t.contains("srt")), "Should have SRT type");
+    assert!(types.iter().any(|t| t.contains("vtt")), "Should have VTT type");
 }
 
 // Table: nfitem_chapters
@@ -550,12 +556,16 @@ https://example.com/feed.xml
     let feed_id = 2007_i64;
     process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let mut chapters = output_records(&out_dir, "nfitem_chapters", feed_id);
+    let mut nfitems = output_records(&out_dir, "nfitems", feed_id);
 
-    assert_eq!(chapters.len(), 1);
-    let chapter = chapters.pop().unwrap();
+    assert_eq!(nfitems.len(), 1);
+    let item = nfitems.pop().unwrap();
+    let chapters_val = get_value_from_record(&item, "podcast_chapters").unwrap();
+    let chapters_array = chapters_val.as_array().unwrap();
+    assert_eq!(chapters_array.len(), 1);
+    let chapter = &chapters_array[0];
 
-    assert_eq!(get_value_from_record(&chapter, "url"), Some(JsonValue::from("https://example.com/chapters.json")));
+    assert_eq!(chapter.get("url"), Some(&JsonValue::from("https://example.com/chapters.json")));
 }
 
 // Table: nfitem_soundbites - Including multiple per item
@@ -584,13 +594,17 @@ https://example.com/feed.xml
     let feed_id = 2008_i64;
     process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let soundbites = output_records(&out_dir, "nfitem_soundbites", feed_id);
+    let nfitems = output_records(&out_dir, "nfitems", feed_id);
 
-    assert_eq!(soundbites.len(), 2);
+    assert_eq!(nfitems.len(), 1);
+    let item = &nfitems[0];
+    let soundbites_val = get_value_from_record(item, "podcast_soundbites").unwrap();
+    let soundbites_array = soundbites_val.as_array().unwrap();
+    assert_eq!(soundbites_array.len(), 2);
 
-    assert_eq!(get_value_from_record(&soundbites[0], "title"), Some(JsonValue::from("Intro")));
-    assert_eq!(get_value_from_record(&soundbites[0], "start_time"), Some(JsonValue::from(10.0)));
-    assert_eq!(get_value_from_record(&soundbites[1], "title"), Some(JsonValue::from("Main topic")));
+    assert_eq!(soundbites_array[0].get("title"), Some(&JsonValue::from("Intro")));
+    assert_eq!(soundbites_array[0].get("start"), Some(&JsonValue::from("10")));
+    assert_eq!(soundbites_array[1].get("title"), Some(&JsonValue::from("Main topic")));
 }
 
 // Table: nfitem_persons - Including multiple per item
@@ -619,14 +633,18 @@ https://example.com/feed.xml
     let feed_id = 2009_i64;
     process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let persons = output_records(&out_dir, "nfitem_persons", feed_id);
+    let nfitems = output_records(&out_dir, "nfitems", feed_id);
 
-    assert_eq!(persons.len(), 2);
+    assert_eq!(nfitems.len(), 1);
+    let item = &nfitems[0];
+    let persons_val = get_value_from_record(item, "podcast_persons").unwrap();
+    let persons_array = persons_val.as_array().unwrap();
+    assert_eq!(persons_array.len(), 2);
 
-    assert_eq!(get_value_from_record(&persons[0], "name"), Some(JsonValue::from("Alice")));
-    assert_eq!(get_value_from_record(&persons[0], "role"), Some(JsonValue::from("host")));
-    assert_eq!(get_value_from_record(&persons[1], "name"), Some(JsonValue::from("Bob")));
-    assert_eq!(get_value_from_record(&persons[1], "role"), Some(JsonValue::from("guest")));
+    assert_eq!(persons_array[0].get("name"), Some(&JsonValue::from("Alice")));
+    assert_eq!(persons_array[0].get("role"), Some(&JsonValue::from("host")));
+    assert_eq!(persons_array[1].get("name"), Some(&JsonValue::from("Bob")));
+    assert_eq!(persons_array[1].get("role"), Some(&JsonValue::from("guest")));
 }
 
 // Table: nfitem_value
@@ -657,16 +675,14 @@ https://example.com/feed.xml
     let feed_id = 2010_i64;
     process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let mut values = output_records(&out_dir, "nfitem_value", feed_id);
+    let nfitems = output_records(&out_dir, "nfitems", feed_id);
 
-    assert_eq!(values.len(), 1);
-    let value = values.pop().unwrap();
+    assert_eq!(nfitems.len(), 1);
+    let item = &nfitems[0];
 
-    let value_block_val = get_value_from_record(&value, "value_block").unwrap();
-    let value_block_str = value_block_val.as_str().unwrap();
-    let value_block: JsonValue = serde_json::from_str(value_block_str).unwrap();
-    assert_eq!(value_block["model"]["type"], "lightning");
-    assert_eq!(value_block["destinations"].as_array().unwrap().len(), 2);
+    let value = get_value_from_record(item, "podcast_values").unwrap();
+    assert_eq!(value["model"]["type"], "lightning");
+    assert_eq!(value["destinations"].as_array().unwrap().len(), 2);
 }
 
 
@@ -699,11 +715,9 @@ https://example.com/feed.xml
     let feed_id = 2012_i64;
     process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let value = single_output_record(&out_dir, "nfvalue", feed_id);
+    let newsfeed = single_output_record(&out_dir, "newsfeeds", feed_id);
 
-    let vb_val = get_value_from_record(&value, "value_block").unwrap();
-    let vb_str = vb_val.as_str().unwrap();
-    let vb: JsonValue = serde_json::from_str(vb_str).unwrap();
+    let vb = get_value_from_record(&newsfeed, "podcast_value").unwrap();
     assert_eq!(vb["destinations"].as_array().unwrap().len(), 100); // Capped at 100
 }
 
@@ -870,10 +884,9 @@ https://example.com/feed.xml
     let feed_id = 2018_i64;
     process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let value = single_output_record(&out_dir, "nfvalue", feed_id);
+    let newsfeed = single_output_record(&out_dir, "newsfeeds", feed_id);
 
-    let vb_val = get_value_from_record(&value, "value_block").unwrap();
-    let vb: JsonValue = serde_json::from_str(vb_val.as_str().unwrap()).unwrap();
+    let vb = get_value_from_record(&newsfeed, "podcast_value").unwrap();
     assert_eq!(vb["model"]["type"], "lightning");
     assert_eq!(vb["destinations"][0]["name"], "LN");
 }
@@ -905,10 +918,11 @@ https://example.com/feed.xml
     let feed_id = 2019_i64;
     process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let value = single_output_record(&out_dir, "nfitem_value", feed_id);
+    let nfitems = output_records(&out_dir, "nfitems", feed_id);
+    assert_eq!(nfitems.len(), 1);
+    let item = &nfitems[0];
 
-    let vb_val = get_value_from_record(&value, "value_block").unwrap();
-    let vb: JsonValue = serde_json::from_str(vb_val.as_str().unwrap()).unwrap();
+    let vb = get_value_from_record(item, "podcast_values").unwrap();
     assert_eq!(vb["destinations"][0]["fee"], true);
 }
 
@@ -940,12 +954,8 @@ https://example.com/feed.xml
     process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
     let nfitems = output_records(&out_dir, "nfitems", feed_id);
-    let transcripts = output_records(&out_dir, "nfitem_transcripts", feed_id);
-    let values = output_records(&out_dir, "nfitem_value", feed_id);
 
     assert_eq!(nfitems.len(), 0);
-    assert_eq!(transcripts.len(), 0);
-    assert_eq!(values.len(), 0);
 }
 
 // Atom <link rel="enclosure"> should be treated as enclosure
@@ -1050,39 +1060,44 @@ https://example.com/feed.xml
 
     process_feed_sync(Cursor::new(feed), "test.xml", Some(2028));
 
-    let soundbites = output_records(&out_dir, "nfitem_soundbites", 2028);
-    let persons = output_records(&out_dir, "nfitem_persons", 2028);
+    let nfitems = output_records(&out_dir, "nfitems", 2028);
+    assert_eq!(nfitems.len(), 1);
+    let item = &nfitems[0];
 
-    assert_eq!(soundbites.len(), 1);
-    let sb_title = get_value_from_record(&soundbites[0], "title")
+    let soundbites_val = get_value_from_record(item, "podcast_soundbites").unwrap();
+    let soundbites_array = soundbites_val.as_array().unwrap();
+    assert_eq!(soundbites_array.len(), 1);
+    let sb_title = soundbites_array[0].get("title")
         .unwrap()
         .as_str()
         .unwrap()
         .to_string();
     assert_eq!(sb_title.len(), 500);
 
-    assert_eq!(persons.len(), 1);
-    let name = get_value_from_record(&persons[0], "name")
+    let persons_val = get_value_from_record(item, "podcast_persons").unwrap();
+    let persons_array = persons_val.as_array().unwrap();
+    assert_eq!(persons_array.len(), 1);
+    let name = persons_array[0].get("name")
         .unwrap()
         .as_str()
         .unwrap()
         .to_string();
-    let role = get_value_from_record(&persons[0], "role")
+    let role = persons_array[0].get("role")
         .unwrap()
         .as_str()
         .unwrap()
         .to_string();
-    let group = get_value_from_record(&persons[0], "grp")
+    let group = persons_array[0].get("group")
         .unwrap()
         .as_str()
         .unwrap()
         .to_string();
-    let img = get_value_from_record(&persons[0], "img")
+    let img = persons_array[0].get("img")
         .unwrap()
         .as_str()
         .unwrap()
         .to_string();
-    let href = get_value_from_record(&persons[0], "href")
+    let href = persons_array[0].get("href")
         .unwrap()
         .as_str()
         .unwrap()
@@ -1185,10 +1200,9 @@ https://example.com/feed.xml
         .unwrap();
     assert_eq!(enclosure_type.len(), 128);
     assert_eq!(get_value_from_record(&item, "enclosure_length"), Some(JsonValue::from(0)));
-    assert_eq!(
-        get_value_from_record(&item, "itunes_episode"),
-        Some(JsonValue::from(1_000_000))
-    );
+    let episode_val = get_value_from_record(&item, "itunes_episode");
+    // itunes_episode should be clamped to 1_000_000 max
+    assert_eq!(episode_val, Some(JsonValue::from(1_000_000)));
 
     assert_eq!(
         get_value_from_record(&news, "language"),
@@ -1259,11 +1273,16 @@ https://example.com/feed.xml
     let feed_id = 2024_i64;
     process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let channel_value = single_output_record(&out_dir, "nfvalue", feed_id);
-    let item_value = single_output_record(&out_dir, "nfitem_value", feed_id);
+    let newsfeed = single_output_record(&out_dir, "newsfeeds", feed_id);
+    let item = single_output_record(&out_dir, "nfitems", feed_id);
 
-    assert_eq!(get_value_from_record(&channel_value, "type"), Some(JsonValue::from(2)));
-    assert_eq!(get_value_from_record(&item_value, "type"), Some(JsonValue::from(1)));
+    // Check that channel value is in newsfeeds (not nfvalue table)
+    let channel_value = get_value_from_record(&newsfeed, "podcast_value").unwrap();
+    assert_eq!(channel_value["model"]["type"], "bitcoin");
+    
+    // Check that item value is in nfitems (not nfitem_value table)
+    let item_value = get_value_from_record(&item, "podcast_values").unwrap();
+    assert_eq!(item_value["model"]["type"], "HBD");
 }
 
 // podcast:locked should fall back to itunes owner email when owner is missing
@@ -1535,12 +1554,12 @@ https://example.com/feed.xml
     let feed_id = 33004_i64;
     process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
 
-    let value = single_output_record(&out_dir, "nfitem_value", feed_id);
+    let nfitems = output_records(&out_dir, "nfitems", feed_id);
+    assert_eq!(nfitems.len(), 1);
+    let item = &nfitems[0];
 
-    // Lightning maps to type code 0 and should replace the earlier bitcoin block
-    assert_eq!(get_value_from_record(&value, "type"), Some(JsonValue::from(0)));
-    let vb_val = get_value_from_record(&value, "value_block").unwrap();
-    let vb: JsonValue = serde_json::from_str(vb_val.as_str().unwrap()).unwrap();
+    let vb = get_value_from_record(item, "podcast_values").unwrap();
+    // Lightning should be selected (priority over bitcoin)
     assert_eq!(vb["model"]["type"], "lightning");
     assert_eq!(vb["destinations"][0]["name"], "LN");
 }
@@ -1672,6 +1691,9 @@ xmlns:content="http://purl.org/rss/1.0/modules/content/">
         assert!(tables.contains_key(table), "missing table {}", table);
         assert_eq!(tables[table].len(), 1, "expected one record for {}", table);
     }
+    
+    // Note: Separate tables (nfitem_transcripts, nfitem_chapters, etc.) no longer exist
+    // Data is now in nfitems JSON columns
 
     let get_value = |obj: &serde_json::Value, col_name: &str| -> Option<serde_json::Value> {
         let columns = obj["columns"].as_array()?;
@@ -1722,72 +1744,45 @@ xmlns:content="http://purl.org/rss/1.0/modules/content/">
     assert_eq!(get_value(nfitem, "enclosure_length"), Some(json!(321)));
     assert_eq!(get_value(nfitem, "enclosure_type"), Some(json!("audio/mpeg")));
 
-    let transcripts = &tables["nfitem_transcripts"][0];
-    assert_eq!(
-        get_value(transcripts, "itemid"),
-        Some(json!(expected_item_id))
-    );
-    assert_eq!(
-        get_value(transcripts, "url"),
-        Some(json!("https://example.com/ep.vtt"))
-    );
-    assert_eq!(get_value(transcripts, "type"), Some(json!(3)));
+    // Extract data from nfitems JSON columns
+    let transcripts_val = get_value(nfitem, "podcast_transcripts").unwrap();
+    let transcripts_array = transcripts_val.as_array().unwrap();
+    assert_eq!(transcripts_array.len(), 1);
+    assert_eq!(transcripts_array[0].get("url"), Some(&json!("https://example.com/ep.vtt")));
+    let transcript_type = transcripts_array[0].get("type").unwrap().as_str().unwrap();
+    assert!(transcript_type.contains("vtt"), "Should be VTT type");
 
-    let chapters = &tables["nfitem_chapters"][0];
-    assert_eq!(
-        get_value(chapters, "itemid"),
-        Some(json!(expected_item_id))
-    );
-    assert_eq!(
-        get_value(chapters, "url"),
-        Some(json!("https://example.com/chapters.json"))
-    );
-    assert_eq!(get_value(chapters, "type"), Some(json!(0)));
+    let chapters_val = get_value(nfitem, "podcast_chapters").unwrap();
+    let chapters_array = chapters_val.as_array().unwrap();
+    assert_eq!(chapters_array.len(), 1);
+    assert_eq!(chapters_array[0].get("url"), Some(&json!("https://example.com/chapters.json")));
+    let chapter_type = chapters_array[0].get("type").unwrap().as_str().unwrap();
+    assert!(chapter_type.contains("json"), "Should be JSON type");
 
-    let soundbite = &tables["nfitem_soundbites"][0];
-    assert_eq!(
-        get_value(soundbite, "itemid"),
-        Some(json!(expected_item_id))
-    );
-    assert_eq!(get_value(soundbite, "title"), Some(json!("Clip")));
-    assert_eq!(get_value(soundbite, "start_time"), Some(json!(10.0)));
-    assert_eq!(get_value(soundbite, "duration"), Some(json!(15.0)));
+    let soundbites_val = get_value(nfitem, "podcast_soundbites").unwrap();
+    let soundbites_array = soundbites_val.as_array().unwrap();
+    assert_eq!(soundbites_array.len(), 1);
+    assert_eq!(soundbites_array[0].get("title"), Some(&json!("Clip")));
+    assert_eq!(soundbites_array[0].get("start"), Some(&json!("10")));
+    assert_eq!(soundbites_array[0].get("duration"), Some(&json!("15")));
 
-    let person = &tables["nfitem_persons"][0];
-    assert_eq!(
-        get_value(person, "itemid"),
-        Some(json!(expected_item_id))
-    );
-    assert_eq!(get_value(person, "name"), Some(json!("Host Name")));
-    assert_eq!(get_value(person, "role"), Some(json!("host")));
-    assert_eq!(get_value(person, "grp"), Some(json!("cast")));
-    assert_eq!(
-        get_value(person, "img"),
-        Some(json!("https://example.com/host.jpg"))
-    );
-    assert_eq!(
-        get_value(person, "href"),
-        Some(json!("https://example.com/host"))
-    );
+    let persons_val = get_value(nfitem, "podcast_persons").unwrap();
+    let persons_array = persons_val.as_array().unwrap();
+    assert_eq!(persons_array.len(), 1);
+    assert_eq!(persons_array[0].get("name"), Some(&json!("Host Name")));
+    assert_eq!(persons_array[0].get("role"), Some(&json!("host")));
+    assert_eq!(persons_array[0].get("group"), Some(&json!("cast")));
+    assert_eq!(persons_array[0].get("img"), Some(&json!("https://example.com/host.jpg")));
+    assert_eq!(persons_array[0].get("href"), Some(&json!("https://example.com/host")));
 
-    let item_value = &tables["nfitem_value"][0];
-    assert_eq!(
-        get_value(item_value, "itemid"),
-        Some(json!(expected_item_id))
-    );
-    assert_eq!(get_value(item_value, "type"), Some(json!(1)));
-    let vb_val = get_value(item_value, "value_block").unwrap();
-    let vb: JsonValue = serde_json::from_str(vb_val.as_str().unwrap()).unwrap();
-    assert_eq!(vb["model"]["type"], "HBD");
-    assert_eq!(vb["destinations"][0]["name"], "Carol");
+    let item_value = get_value(nfitem, "podcast_values").unwrap();
+    assert_eq!(item_value["model"]["type"], "HBD");
+    assert_eq!(item_value["destinations"][0]["name"], "Carol");
 
-    let channel_value = &tables["nfvalue"][0];
-    assert_eq!(get_value(channel_value, "type"), Some(json!(2)));
-    let cv_val = get_value(channel_value, "value_block").unwrap();
-    let cv: JsonValue = serde_json::from_str(cv_val.as_str().unwrap()).unwrap();
-    assert_eq!(cv["model"]["type"], "bitcoin");
-    assert_eq!(cv["destinations"].as_array().unwrap().len(), 2);
-    assert_eq!(cv["destinations"][1]["fee"], true);
+    let channel_value = get_value(news, "podcast_value").unwrap();
+    assert_eq!(channel_value["model"]["type"], "bitcoin");
+    assert_eq!(channel_value["destinations"].as_array().unwrap().len(), 2);
+    assert_eq!(channel_value["destinations"][1]["fee"], true);
 }
 
 // Atom feeds should mirror Partytime behavior (alternate links, enclosures, pubsub)

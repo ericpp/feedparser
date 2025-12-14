@@ -109,11 +109,19 @@ pub fn write_newsfeeds(state: &ParserState, feed_id: Option<i64>) {
     let update_frequency: i32 = utils::calculate_update_frequency(&past_pub_dates);
 
 
-    // get the first lightning value block
-    let podcast_value = state.channel_podcast_values
+    // get the first lightning value block, or fallback to first value if no lightning
+    let mut podcast_value = state.channel_podcast_values
         .iter()
         .find(|value| value.model.r#type == "lightning")
-        .cloned();
+        .cloned()
+        .or_else(|| state.channel_podcast_values.first().cloned());
+    
+    // Limit recipients to 100
+    if let Some(value) = &mut podcast_value {
+        if value.destinations.len() > 100 {
+            value.destinations.truncate(100);
+        }
+    }
 
     let record = SqlInsert {
         table: "newsfeeds".to_string(),
@@ -243,9 +251,9 @@ pub fn write_nfitems(state: &ParserState, feed_id: Option<i64>) {
         .map(utils::truncate_int);
 
     let itunes_episode = state.itunes_episode
-        .parse::<i32>()
+        .parse::<i64>()
         .ok()
-        .map(|v| v.min(1000000));
+        .map(|v| v.min(1000000) as i32);
 
     let image = if !state.itunes_image.is_empty() {
         utils::sanitize_url(&state.itunes_image)
@@ -253,11 +261,19 @@ pub fn write_nfitems(state: &ParserState, feed_id: Option<i64>) {
         utils::sanitize_url(&state.item_image)
     };
 
-    // get the first lightning value block
-    let podcast_value = state.podcast_values
+    // get the first lightning value block, or fallback to first value if no lightning
+    let mut podcast_value = state.podcast_values
         .iter()
         .find(|value| value.model.r#type == "lightning")
-        .cloned();
+        .cloned()
+        .or_else(|| state.podcast_values.first().cloned());
+    
+    // Limit recipients to 100
+    if let Some(value) = &mut podcast_value {
+        if value.destinations.len() > 100 {
+            value.destinations.truncate(100);
+        }
+    }
 
     let record = SqlInsert {
         table: "nfitems".to_string(),

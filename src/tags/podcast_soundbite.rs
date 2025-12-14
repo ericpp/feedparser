@@ -31,8 +31,11 @@ pub fn on_end(_feed_id: Option<i64>, state: &mut ParserState) {
     if state.in_podcast_soundbite {
         state.in_podcast_soundbite = false;
 
+        use crate::utils;
+        let truncated_title = utils::truncate_string(&state.current_soundbite_title, 500);
+
         state.podcast_soundbites.push(PodcastSoundbite {
-            title: state.current_soundbite_title.clone(),
+            title: truncated_title,
             start: state.current_soundbite_start.clone(),
             duration: state.current_soundbite_duration.clone(),
         });

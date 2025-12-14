@@ -50,6 +50,7 @@ pub fn on_start(state: &mut ParserState) {
     state.current_person_href.clear();
 
     state.in_podcast_value = false;
+    state.podcast_values.clear();
     state.value_recipients.clear();
     state.value_model_type.clear();
     state.value_model_method.clear();

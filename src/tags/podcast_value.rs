@@ -20,17 +20,18 @@ pub fn on_start(attributes: &[OwnedAttribute], state: &mut ParserState) {
         }
     }
 
-    if state.in_channel {
-        state.in_channel_podcast_value = true;
-        state.channel_value_model_type = model_type;
-        state.channel_value_model_method = model_method;
-        state.channel_value_model_suggested = model_suggested;
-    } else {
+    // Check in_item first, since items are inside channels
+    if state.in_item {
         state.in_podcast_value = true;
         state.value_recipients.clear();
         state.value_model_type = model_type;
         state.value_model_method = model_method;
         state.value_model_suggested = model_suggested;
+    } else if state.in_channel {
+        state.in_channel_podcast_value = true;
+        state.channel_value_model_type = model_type;
+        state.channel_value_model_method = model_method;
+        state.channel_value_model_suggested = model_suggested;
     }
 }
 
@@ -53,30 +54,16 @@ pub fn on_value_recipient(attributes: &[OwnedAttribute], state: &mut ParserState
         }
     }
 
-    if state.in_channel_podcast_value {
-        state.channel_value_recipients.push(vr);
-    } else {
+    // Check in_podcast_value first, since items are inside channels
+    if state.in_podcast_value {
         state.value_recipients.push(vr);
+    } else if state.in_channel_podcast_value {
+        state.channel_value_recipients.push(vr);
     }
 }
 
 pub fn on_end(_feed_id: Option<i64>, state: &mut ParserState) {
-    if state.in_channel_podcast_value && !state.channel_value_recipients.is_empty() {
-        state.channel_podcast_values.push(PodcastValue {
-            model: PodcastValueModel {
-                r#type: state.channel_value_model_type.clone(),
-                method: state.channel_value_model_method.clone(),
-                suggested: state.channel_value_model_suggested.clone(),
-            },
-            destinations: state.channel_value_recipients.clone(),
-        });
-        state.in_channel_podcast_value = false;
-        state.channel_value_recipients.clear();
-        state.channel_value_model_type.clear();
-        state.channel_value_model_method.clear();
-        state.channel_value_model_suggested.clear();
-    }
-
+    // Check in_podcast_value first, since items are inside channels
     if state.in_podcast_value && !state.value_recipients.is_empty() {
         state.podcast_values.push(PodcastValue {
             model: PodcastValueModel {
@@ -91,5 +78,19 @@ pub fn on_end(_feed_id: Option<i64>, state: &mut ParserState) {
         state.value_model_type.clear();
         state.value_model_method.clear();
         state.value_model_suggested.clear();
+    } else if state.in_channel_podcast_value && !state.channel_value_recipients.is_empty() {
+        state.channel_podcast_values.push(PodcastValue {
+            model: PodcastValueModel {
+                r#type: state.channel_value_model_type.clone(),
+                method: state.channel_value_model_method.clone(),
+                suggested: state.channel_value_model_suggested.clone(),
+            },
+            destinations: state.channel_value_recipients.clone(),
+        });
+        state.in_channel_podcast_value = false;
+        state.channel_value_recipients.clear();
+        state.channel_value_model_type.clear();
+        state.channel_value_model_method.clear();
+        state.channel_value_model_suggested.clear();
     }
 }

@@ -35,12 +35,19 @@ pub fn on_end(_feed_id: Option<i64>, state: &mut ParserState) {
     if state.in_podcast_person {
         state.in_podcast_person = false;
 
+        use crate::utils;
+        let truncated_name = utils::truncate_string(&state.current_person_name, 128);
+        let truncated_role = utils::truncate_string(&state.current_person_role, 128);
+        let truncated_group = utils::truncate_string(&state.current_person_group, 128);
+        let truncated_img = utils::truncate_string(&state.current_person_img, 768);
+        let truncated_href = utils::truncate_string(&state.current_person_href, 768);
+
         state.podcast_persons.push(PodcastPerson {
-            name: state.current_person_name.clone(),
-            role: state.current_person_role.clone(),
-            group: state.current_person_group.clone(),
-            img: state.current_person_img.clone(),
-            href: state.current_person_href.clone(),
+            name: truncated_name,
+            role: truncated_role,
+            group: truncated_group,
+            img: truncated_img,
+            href: truncated_href,
         });
     }
 }
