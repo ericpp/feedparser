@@ -1,9 +1,10 @@
 use std::fs;
 use std::path::PathBuf;
 
+use serde::{Serialize, Deserialize};
 use serde_json::Value as JsonValue;
 
-use crate::{SqlInsert, OUTPUT_SUBDIR, GLOBAL_COUNTER};
+use crate::{OUTPUT_SUBDIR, GLOBAL_COUNTER};
 use crate::parser_state::ParserState;
 
 fn get_output_dir() -> PathBuf {
@@ -11,6 +12,14 @@ fn get_output_dir() -> PathBuf {
         .get()
         .cloned()
         .unwrap_or_else(|| PathBuf::from("outputs"))
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SqlInsert {
+    pub table: String,
+    pub columns: Vec<String>,
+    pub values: Vec<JsonValue>,
+    pub feed_id: Option<i64>,
 }
 
 fn write_record(record: &SqlInsert, table_for_name: &str) {

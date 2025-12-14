@@ -5,8 +5,6 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::OnceLock;
 use std::path::{PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH, Instant};
-use serde::Serialize;
-use serde_json::Value as JsonValue;
 use xml::reader::{EventReader, XmlEvent};
 
 mod parser_state;
@@ -21,14 +19,6 @@ use parser_state::ParserState;
 pub(crate) static GLOBAL_COUNTER: AtomicUsize = AtomicUsize::new(0);
 // Per-run output subfolder based on startup UNIX timestamp
 pub(crate) static OUTPUT_SUBDIR: OnceLock<PathBuf> = OnceLock::new();
-
-#[derive(Serialize)]
-pub struct SqlInsert {
-    pub table: String,
-    pub columns: Vec<String>,
-    pub values: Vec<JsonValue>,
-    pub feed_id: Option<i64>,
-}
 
 #[tokio::main]
 async fn main() {
