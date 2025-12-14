@@ -2,7 +2,7 @@ use xml::attribute::OwnedAttribute;
 
 use crate::parser_state::ParserState;
 
-pub fn on_start(current_element: &str, attributes: &[OwnedAttribute], state: &mut ParserState) {
+pub fn on_start(attributes: &[OwnedAttribute], state: &mut ParserState) {
     let mut rel = String::new();
     let mut href = String::new();
     let mut length = String::new();

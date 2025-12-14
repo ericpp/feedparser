@@ -2,7 +2,7 @@ use xml::attribute::OwnedAttribute;
 
 use crate::parser_state::ParserState;
 
-pub fn on_start(_current_element: &str, attributes: &[OwnedAttribute], state: &mut ParserState) {
+pub fn on_start(attributes: &[OwnedAttribute], state: &mut ParserState) {
     if state.in_item {
         let href = attributes.iter().find(|a| a.name.local_name == "href");
 

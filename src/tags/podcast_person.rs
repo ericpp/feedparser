@@ -1,6 +1,6 @@
 use xml::attribute::OwnedAttribute;
 
-use crate::{outputs, parser_state::ParserState};
+use crate::{parser_state::ParserState, parser_state::PodcastPerson};
 
 pub fn on_start(attributes: &[OwnedAttribute], state: &mut ParserState) {
     if !state.in_item {
@@ -31,28 +31,17 @@ pub fn on_text(data: &str, state: &mut ParserState) {
     }
 }
 
-pub fn on_end(feed_id: Option<i64>, state: &mut ParserState) {
+pub fn on_end(_feed_id: Option<i64>, state: &mut ParserState) {
     if state.in_podcast_person {
         state.in_podcast_person = false;
-        // Only write person if item has a valid enclosure
-        if state.item_has_valid_enclosure {
-            state
-                .item_hash
-                .consume(state.current_person_name.trim().as_bytes());
-            state
-                .item_hash
-                .consume(state.current_person_role.trim().as_bytes());
-            state
-                .item_hash
-                .consume(state.current_person_group.trim().as_bytes());
-            state
-                .item_hash
-                .consume(state.current_person_img.trim().as_bytes());
-            state
-                .item_hash
-                .consume(state.current_person_href.trim().as_bytes());
-            outputs::write_nfitem_persons(state, feed_id);
-        }
+
+        state.podcast_persons.push(PodcastPerson {
+            name: state.current_person_name.clone(),
+            role: state.current_person_role.clone(),
+            group: state.current_person_group.clone(),
+            img: state.current_person_img.clone(),
+            href: state.current_person_href.clone(),
+        });
     }
 }
 

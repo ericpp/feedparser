@@ -7,7 +7,7 @@ use std::path::{PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH, Instant};
 use serde::{Serialize, Deserialize};
 use serde_json::Value as JsonValue;
-use xml::reader::{EventReader, XmlEvent};
+use xml::reader::{XmlEvent, ParserConfig};
 use xml::name::OwnedName;
 
 mod parser_state;
@@ -192,7 +192,9 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
 
     // Create an XML parser from the buffered payload
     let cursor = Cursor::new(xml_bytes);
-    let parser = EventReader::new(cursor);
+    let config = ParserConfig::new();
+    let config = utils::add_html_entities_to_parser_config(config);
+    let parser = config.create_reader(cursor);
 
     // Parser state holds all flags and accumulators used by handlers
     let mut state = ParserState::default();
@@ -232,13 +234,6 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 state.current_element = get_prefixed_name(&name);
                 let current = state.current_element.clone();
-                // #[cfg(test)]
-                // {
-                    // println!("start: {} attrs {}", current, attributes.len());
-                    // for attr in &attributes {
-                    //     println!(" attr {}={}", attr.name.local_name, attr.value);
-                    // }
-                // }
                 tags::dispatch_start(&current, &attributes, &mut state);
             }
 

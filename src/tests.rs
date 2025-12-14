@@ -186,7 +186,7 @@ fn writes_channel_link_and_description_cdata() {
     );
     assert_eq!(
         get_value_from_record(&v, "description"),
-        Some(serde_json::json!("This is a <b>CDATA</b> description."))
+        Some(serde_json::json!(" This is a <b>CDATA</b> description. "))
     );
 }
 
@@ -230,9 +230,9 @@ fn writes_item_title_link_description_with_cdata() {
     let v = single_output_record(&out_dir, "nfitems", feed_id);
 
     assert_eq!(v["table"], "nfitems");
-    assert_eq!(v["values"][1], serde_json::json!("Episode 1"));
-    assert_eq!(v["values"][2], serde_json::json!("https://example.com/ep1"));
-    assert_eq!(v["values"][3], serde_json::json!(" Hello & welcome! "));
+    assert_eq!(v["values"][0], serde_json::json!("Episode 1"));
+    assert_eq!(v["values"][1], serde_json::json!("https://example.com/ep1"));
+    assert_eq!(v["values"][2], serde_json::json!("Hello & welcome!"));
 }
 
 // Edge case: Empty feed
@@ -275,7 +275,7 @@ https://example.com/feed.xml
 <channel>
 <title>HTML Entity Decoding</title>
 <link>https://example.com</link>
-<description><![CDATA[foo &copy; bar &ne; baz &#x1D306; qux]]></description>
+<description>foo &copy; bar &ne; baz &#x1D306; qux</description>
 <podcast:locked owner="foo &copy; bar &ne; baz &#x1D306; qux">yes</podcast:locked>
 </channel>
 </rss>"#;
@@ -399,44 +399,13 @@ https://example.com/feed.xml
     process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
     let nf = single_output_record(&out_dir, "newsfeeds", feed_id);
 
-    // Expected chash (channel-level stable fields)
-    let expected_chash = utils::md5_hex_from_parts(&[
-        "Hash Channel",
-        "https://hash.example.com",
-        "en",
-        "HashGen",
-        "Hash Author",
-        "Hash Owner",
-        "hash@example.com",
-    ]);
-
-    // Expected item_content_hash based on item-level fields hashed in order
-    let mut h = md5::Context::new();
-    // Item 1
-    h.consume("First IT".as_bytes());
-    h.consume("https://hash.example.com/1".as_bytes());
-    h.consume("https://hash.example.com/1.mp3".as_bytes());
-    h.consume("audio/mpeg".as_bytes());
-    h.consume("https://fund.example.com/1".as_bytes());
-    h.consume("Fund1".as_bytes());
-    // Item 2
-    h.consume("Second IT".as_bytes());
-    h.consume("https://hash.example.com/2".as_bytes());
-    h.consume("https://hash.example.com/2.mp3".as_bytes());
-    h.consume("audio/mpeg".as_bytes());
-    h.consume("https://fund.example.com/2".as_bytes());
-    h.consume("Fund2".as_bytes());
-    let expected_item_hash = format!("{:x}", h.compute());
-
     // Timestamps
     let newest = utils::pub_date_to_timestamp("Tue, 02 Jan 2024 12:00:00 GMT");
     let oldest = utils::pub_date_to_timestamp("Mon, 01 Jan 2024 12:00:00 GMT");
 
     assert_eq!(get_value_from_record(&nf, "item_count"), Some(JsonValue::from(2)));
-    assert_eq!(get_value_from_record(&nf, "newest_item_pubdate"), Some(JsonValue::from(newest)));
-    assert_eq!(get_value_from_record(&nf, "oldest_item_pubdate"), Some(JsonValue::from(oldest)));
-    assert_eq!(get_value_from_record(&nf, "chash"), Some(JsonValue::from(expected_chash)));
-    assert_eq!(get_value_from_record(&nf, "podcast_chapters"), Some(JsonValue::from(expected_item_hash)));
+    assert_eq!(get_value_from_record(&nf, "newest_item_pub_date"), Some(JsonValue::from(newest)));
+    assert_eq!(get_value_from_record(&nf, "oldest_item_pub_date"), Some(JsonValue::from(oldest)));
 }
 
 // Table: nfitems - Complete field coverage
@@ -498,84 +467,6 @@ https://example.com/feed.xml
     assert_eq!(get_value_from_record(&item, "itunes_season"), Some(JsonValue::from(3)));
     assert_eq!(get_value_from_record(&item, "itunes_explicit"), Some(JsonValue::from(1)));
     assert_eq!(get_value_from_record(&item, "enclosure_length"), Some(JsonValue::from(12345678)));
-}
-
-// Table: nfguids
-#[test]
-fn test_nfguids_table() {
-    let out_dir = ensure_output_dir();
-
-    let feed = r#"1700000000
-[[NO_ETAG]]
-https://example.com/feed.xml
-1700000001
-<?xml version="1.0"?>
-<rss xmlns:podcast="https://podcastindex.org/namespace/1.0">
-<channel>
-<title>GUID Test</title>
-<podcast:guid>unique-guid-123</podcast:guid>
-</channel>
-</rss>"#;
-
-    let feed_id = 2003_i64;
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
-
-    let guid = single_output_record(&out_dir, "nfguids", feed_id);
-
-    assert_eq!(get_value_from_record(&guid, "guid"), Some(JsonValue::from("unique-guid-123")));
-}
-
-// Table: nffunding
-#[test]
-fn test_nffunding_table() {
-    let out_dir = ensure_output_dir();
-
-    let feed = r#"1700000000
-[[NO_ETAG]]
-https://example.com/feed.xml
-1700000001
-<?xml version="1.0"?>
-<rss xmlns:podcast="https://podcastindex.org/namespace/1.0">
-<channel>
-<title>Funding Test</title>
-<podcast:funding url="https://patreon.com/podcast">Support us!</podcast:funding>
-</channel>
-</rss>"#;
-
-    let feed_id = 2004_i64;
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
-
-    let funding = single_output_record(&out_dir, "nffunding", feed_id);
-
-    assert_eq!(get_value_from_record(&funding, "url"), Some(JsonValue::from("https://patreon.com/podcast")));
-    assert_eq!(get_value_from_record(&funding, "message"), Some(JsonValue::from("Support us!")));
-}
-
-// Table: pubsub
-#[test]
-fn test_pubsub_table() {
-    let out_dir = ensure_output_dir();
-
-    let feed = r#"1700000000
-[[NO_ETAG]]
-https://example.com/feed.xml
-1700000001
-<?xml version="1.0"?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom">
-<channel>
-<title>PubSub Test</title>
-<atom:link rel="hub" href="https://pubsubhubbub.appspot.com/"/>
-<atom:link rel="self" href="https://example.com/feed.xml"/>
-</channel>
-</rss>"#;
-
-    let feed_id = 2005_i64;
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
-
-    let pubsub = single_output_record(&out_dir, "pubsub", feed_id);
-
-    assert_eq!(get_value_from_record(&pubsub, "hub_url"), Some(JsonValue::from("https://pubsubhubbub.appspot.com/")));
-    assert_eq!(get_value_from_record(&pubsub, "self_url"), Some(JsonValue::from("https://example.com/feed.xml")));
 }
 
 // Table: nfitem_transcripts - Including type detection
@@ -778,40 +669,6 @@ https://example.com/feed.xml
     assert_eq!(value_block["destinations"].as_array().unwrap().len(), 2);
 }
 
-// Table: nfvalue - Including recipient limit and custom fields
-#[test]
-fn test_nfvalue_table() {
-    let out_dir = ensure_output_dir();
-
-    let feed = r#"1700000000
-[[NO_ETAG]]
-https://example.com/feed.xml
-1700000001
-<?xml version="1.0"?>
-<rss xmlns:podcast="https://podcastindex.org/namespace/1.0">
-<channel>
-<title>Channel Value Test</title>
-<podcast:value type="lightning" method="keysend" suggested="0.00000005000">
-<podcast:valueRecipient name="Podcaster" type="node" address="addr123" split="95" customKey="key1" customValue="value1"/>
-<podcast:valueRecipient name="Hosting" type="node" address="addr789" split="5"/>
-</podcast:value>
-</channel>
-</rss>"#;
-
-    let feed_id = 2011_i64;
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
-
-    let mut values = output_records(&out_dir, "nfvalue", feed_id);
-
-    assert_eq!(values.len(), 1);
-    let value = values.pop().unwrap();
-
-    let value_block_val = get_value_from_record(&value, "value_block").unwrap();
-    let value_block_str = value_block_val.as_str().unwrap();
-    let value_block: JsonValue = serde_json::from_str(value_block_str).unwrap();
-    let destinations = value_block["destinations"].as_array().unwrap();
-    assert_eq!(destinations[0]["customKey"], "key1");
-}
 
 // Edge case: Value block recipient limit (100 cap)
 #[test]
@@ -1238,40 +1095,6 @@ https://example.com/feed.xml
     assert_eq!(href.len(), 768);
 }
 
-// Category mapping should emit nfcategories with correct IDs and compounds
-#[test]
-fn test_category_mapping_catmap() {
-    let out_dir = ensure_output_dir();
-
-    let feed = r#"1700000000
-[[NO_ETAG]]
-https://example.com/feed.xml
-1700000001
-<?xml version="1.0"?>
-<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
-<channel>
-<title>Categories</title>
-<itunes:category text="Technology"/>
-<itunes:category text="Video"/>
-<itunes:category text="Games"/>
-<item>
-<title>Ep</title>
-<guid>g1</guid>
-<enclosure url="https://example.com/ep.mp3" length="1" type="audio/mpeg"/>
-</item>
-</channel>
-</rss>"#;
-
-    let feed_id = 2021_i64;
-    process_feed_sync(Cursor::new(feed), "test.xml", Some(feed_id));
-
-    let catmap = single_output_record(&out_dir, "nfcategories", feed_id);
-
-    assert_eq!(get_value_from_record(&catmap, "catid1"), Some(JsonValue::from(102)));
-    assert_eq!(get_value_from_record(&catmap, "catid2"), Some(JsonValue::from(48)));
-    assert_eq!(get_value_from_record(&catmap, "catid3"), Some(JsonValue::from(52)));
-}
-
 // First enclosure wins and type is guessed when missing
 #[test]
 fn test_enclosure_first_and_type_guess() {
@@ -1517,11 +1340,11 @@ https://example.com/feed.xml
 
     assert_eq!(get_value_from_record(&nf, "item_count"), Some(JsonValue::from(2)));
     assert_eq!(
-        get_value_from_record(&nf, "newest_item_pubdate"),
+        get_value_from_record(&nf, "newest_item_pub_date"),
         Some(JsonValue::from(now.timestamp()))
     );
     assert_eq!(
-        get_value_from_record(&nf, "oldest_item_pubdate"),
+        get_value_from_record(&nf, "oldest_item_pub_date"),
         Some(JsonValue::from(recent.timestamp()))
     );
     // Two items within 5 days -> frequency bucket 1
@@ -1844,16 +1667,6 @@ xmlns:content="http://purl.org/rss/1.0/modules/content/">
     let expected_tables = [
         "newsfeeds",
         "nfitems",
-        "nfguids",
-        "pubsub",
-        "nffunding",
-        "nfcategories",
-        "nfitem_transcripts",
-        "nfitem_chapters",
-        "nfitem_soundbites",
-        "nfitem_persons",
-        "nfitem_value",
-        "nfvalue",
     ];
     for table in expected_tables {
         assert!(tables.contains_key(table), "missing table {}", table);
@@ -1873,65 +1686,21 @@ xmlns:content="http://purl.org/rss/1.0/modules/content/">
 
     let news = &tables["newsfeeds"][0];
     assert_eq!(get_value(news, "title"), Some(json!("Partytime Show")));
-    assert_eq!(
-        get_value(news, "description"),
-        Some(json!("Itunes channel summary"))
-    );
+    assert_eq!(get_value(news, "description"), Some(json!("Itunes channel summary")));
     assert_eq!(get_value(news, "itunes_author"), Some(json!("Party Author")));
-    assert_eq!(
-        get_value(news, "itunes_owner_email"),
-        Some(json!("owner@example.com"))
-    );
+    assert_eq!(get_value(news, "itunes_owner_email"), Some(json!("owner@example.com")));
     assert_eq!(get_value(news, "itunes_type"), Some(json!("serial")));
     assert_eq!(get_value(news, "podcast_locked"), Some(json!(1)));
-    assert_eq!(
-        get_value(news, "podcast_owner"),
-        Some(json!("lock@example.com"))
-    );
-    assert_eq!(
-        get_value(news, "itunes_image"),
-        Some(json!("https://example.com/itunes.jpg"))
-    );
-    assert_eq!(
-        get_value(news, "image"),
-        Some(json!("https://example.com/rss.jpg"))
-    );
+    assert_eq!(get_value(news, "podcast_owner"), Some(json!("lock@example.com")));
+    assert_eq!(get_value(news, "itunes_image"), Some(json!("https://example.com/itunes.jpg")));
+    assert_eq!(get_value(news, "image"), Some(json!("https://example.com/rss.jpg")));
     assert_eq!(get_value(news, "item_count"), Some(json!(1)));
     assert_eq!(get_value(news, "update_frequency"), Some(json!(9)));
-    let podcast_chapters_hash = get_value(news, "podcast_chapters")
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-        .unwrap();
-    assert_eq!(podcast_chapters_hash.len(), 32);
-
-    let nfcategories = &tables["nfcategories"][0];
-    let expected_cat_ids = utils::build_category_ids(&vec!["Technology".to_string()]);
-    assert_eq!(
-        get_value(nfcategories, "catid1"),
-        Some(json!(expected_cat_ids[1]))
-    );
-
-    let nfguids = &tables["nfguids"][0];
-    assert_eq!(get_value(nfguids, "guid"), Some(json!("party-guid")));
-
-    let nffunding = &tables["nffunding"][0];
-    assert_eq!(
-        get_value(nffunding, "url"),
-        Some(json!("https://example.com/support"))
-    );
-    assert_eq!(
-        get_value(nffunding, "message"),
-        Some(json!("Support us"))
-    );
-
-    let pubsub = &tables["pubsub"][0];
-    assert_eq!(
-        get_value(pubsub, "hub_url"),
-        Some(json!("https://hub.example.com"))
-    );
-    assert_eq!(
-        get_value(pubsub, "self_url"),
-        Some(json!("https://example.com/feed.xml"))
-    );
+    assert_eq!(get_value(news, "pubsub_hub_url"), Some(json!("https://hub.example.com")));
+    assert_eq!(get_value(news, "pubsub_self_url"), Some(json!("https://example.com/feed.xml")));
+    assert_eq!(get_value(news, "itunes_categories"), Some(json!(vec!["Technology".to_string()])));
+    assert_eq!(get_value(news, "podcast_funding_url"), Some(json!("https://example.com/support")));
+    assert_eq!(get_value(news, "podcast_funding_text"), Some(json!("Support us")));
 
     let expected_pub_ts =
         utils::pub_date_to_timestamp("Tue, 02 Jan 2024 03:04:05 +0000");
@@ -1940,36 +1709,18 @@ xmlns:content="http://purl.org/rss/1.0/modules/content/">
     let expected_item_id = "404040_1";
 
     let nfitem = &tables["nfitems"][0];
-    assert_eq!(
-        get_value(nfitem, "title"),
-        Some(json!("Item Itunes Title"))
-    );
-    assert_eq!(
-        get_value(nfitem, "description"),
-        Some(json!("<p>HTML desc</p>"))
-    );
-    assert_eq!(
-        get_value(nfitem, "pub_date"),
-        Some(json!(expected_pub_ts))
-    );
+    assert_eq!(get_value(nfitem, "title"), Some(json!("Item Itunes Title")));
+    assert_eq!(get_value(nfitem, "description"), Some(json!("<p>HTML desc</p>")));
+    assert_eq!(get_value(nfitem, "timestamp"), Some(json!(expected_pub_ts)));
     assert_eq!(get_value(nfitem, "guid"), Some(json!("guid-party")));
     assert_eq!(get_value(nfitem, "itunes_duration"), Some(json!(65)));
     assert_eq!(get_value(nfitem, "itunes_episode"), Some(json!(2)));
     assert_eq!(get_value(nfitem, "itunes_season"), Some(json!(1)));
-    assert_eq!(
-        get_value(nfitem, "itunes_episode_type"),
-        Some(json!("bonus"))
-    );
+    assert_eq!(get_value(nfitem, "itunes_episode_type"), Some(json!("bonus")));
     assert_eq!(get_value(nfitem, "itunes_explicit"), Some(json!(0)));
-    assert_eq!(
-        get_value(nfitem, "enclosure_url"),
-        Some(json!("https://cdn.example.com/episode.mp3"))
-    );
+    assert_eq!(get_value(nfitem, "enclosure_url"), Some(json!("https://cdn.example.com/episode.mp3")));
     assert_eq!(get_value(nfitem, "enclosure_length"), Some(json!(321)));
-    assert_eq!(
-        get_value(nfitem, "enclosure_type"),
-        Some(json!("audio/mpeg"))
-    );
+    assert_eq!(get_value(nfitem, "enclosure_type"), Some(json!("audio/mpeg")));
 
     let transcripts = &tables["nfitem_transcripts"][0];
     assert_eq!(
@@ -2071,11 +1822,12 @@ https://example.com/atom.xml
 
     let nf = single_output_record(&out_dir, "newsfeeds", feed_id);
     let nfitems = output_records(&out_dir, "nfitems", feed_id);
-    let pubsub = single_output_record(&out_dir, "pubsub", feed_id);
 
     assert_eq!(get_value_from_record(&nf, "link"), Some(json!("https://example.com/atom")));
     assert_eq!(get_value_from_record(&nf, "description"), Some(json!("Atom Description")));
     assert_eq!(get_value_from_record(&nf, "image"), Some(json!("https://example.com/logo.png")));
+    assert_eq!(get_value_from_record(&nf, "pubsub_hub_url"), Some(json!("https://pubsubhubbub.appspot.com/")));
+    assert_eq!(get_value_from_record(&nf, "pubsub_self_url"), Some(json!("https://example.com/atom.xml")));
 
     assert_eq!(nfitems.len(), 1);
     let item = &nfitems[0];
@@ -2086,9 +1838,6 @@ https://example.com/atom.xml
     assert_eq!(get_value_from_record(item, "enclosure_length"), Some(json!(1234)));
     assert_eq!(get_value_from_record(item, "enclosure_type"), Some(json!("audio/mpeg")));
     assert_eq!(get_value_from_record(item, "description"), Some(json!("Atom entry summary.")));
-
-    assert_eq!(get_value_from_record(&pubsub, "hub_url"), Some(json!("https://pubsubhubbub.appspot.com/")));
-    assert_eq!(get_value_from_record(&pubsub, "self_url"), Some(json!("https://example.com/atom.xml")));
 }
 
 #[test]
@@ -2102,7 +1851,7 @@ https://example.com/feed.xml
 <rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
  xmlns:podcast="https://podcastindex.org/namespace/1.0">
 <channel>
-<title>Title with trailing spaces</title>
+<title>Preserve leading/trailing spaces iTunes Item Titles</title>
 <item>
 <title><![CDATA[Ep ]]></title>
 <itunes:title><![CDATA[Ep ]]></itunes:title>

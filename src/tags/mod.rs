@@ -3,7 +3,6 @@ use xml::attribute::OwnedAttribute;
 use crate::parser_state::ParserState;
 
 pub mod atom_link;
-pub mod category;
 pub mod channel;
 pub mod content_encoded;
 pub mod description;
@@ -14,6 +13,9 @@ pub mod image;
 pub mod item;
 pub mod atom_logo;
 pub mod itunes_author;
+pub mod itunes_category;
+pub mod itunes_email;
+pub mod itunes_name;
 pub mod itunes_duration;
 pub mod itunes_episode;
 pub mod itunes_episode_type;
@@ -27,6 +29,7 @@ pub mod itunes_title;
 pub mod itunes_type;
 pub mod language;
 pub mod link;
+pub mod podcast_alternate_enclosure;
 pub mod podcast_chapters;
 pub mod podcast_funding;
 pub mod podcast_guid;
@@ -51,7 +54,7 @@ pub fn dispatch_start(current_element: &str, attributes: &[OwnedAttribute], stat
             channel::on_start(state);
         }
         "item" | "atom:entry" => item::on_start(state),
-        "link" => link::on_start(current_element, attributes, state),
+        "link" => link::on_start( attributes, state),
         "image" => image::on_start(state),
         "itunes:duration" => itunes_duration::on_start(state),
         "itunes:owner" => itunes_owner::on_start(state),
@@ -62,25 +65,14 @@ pub fn dispatch_start(current_element: &str, attributes: &[OwnedAttribute], stat
         "podcast:value" => podcast_value::on_start(attributes, state),
         "podcast:valueRecipient" => podcast_value::on_value_recipient(attributes, state),
         "enclosure" => enclosure::on_start(attributes, state),
-        "podcast:alternateEnclosure" => {
-            if state.in_item {
-                state.in_podcast_alternate_enclosure = true;
-            }
-        },
-        "atom:link" => atom_link::on_start(current_element, attributes, state),
-        "itunes:category" => category::on_start(current_element, attributes, state),
-        "itunes:image" => itunes_image::on_start(current_element, attributes, state),
-        "podcast:funding" => podcast_funding::on_start(current_element, attributes, state),
-        "podcast:locked" => podcast_locked::on_start(current_element, attributes, state),
+        "podcast:alternateEnclosure" => podcast_alternate_enclosure::on_start(state),
+        "atom:link" => atom_link::on_start(attributes, state),
+        "itunes:category" => itunes_category::on_start(attributes, state),
+        "itunes:image" => itunes_image::on_start( attributes, state),
+        "podcast:funding" => podcast_funding::on_start( attributes, state),
+        "podcast:locked" => podcast_locked::on_start( attributes, state),
         _ => {}
     }
-
-    // Namespace-sensitive handlers
-    // itunes_image::on_start(current_element, attributes, state);
-    // podcast_funding::on_start(current_element, attributes, state);
-    // podcast_locked::on_start(current_element, attributes, state);
-    // category::on_start(current_element, attributes, state);
-    // atom_link::on_start(current_element, attributes, state);
 }
 
 pub fn dispatch_text(current_element: &str, data: &str, state: &mut ParserState) {
@@ -107,21 +99,20 @@ pub fn dispatch_text(current_element: &str, data: &str, state: &mut ParserState)
         "itunes:summary" => itunes_summary::on_text(data, state),
         "itunes:title" => itunes_title::on_text(data, state),
         "itunes:type" => itunes_type::on_text(data, state),
+        "itunes:name" => itunes_name::on_text(data, state),
+        "itunes:email" => itunes_email::on_text(data, state),
         "itunes:new-feed-url" => itunes_new_feed_url::on_text(data, state),
         "podcast:guid" => podcast_guid::on_text(data, state),
         "url" => url::on_text(data, state),
         "atom:logo" => atom_logo::on_text(data, state),
         "content" => content::on_text(data, state),
+        "podcast:funding" => podcast_funding::on_text(data, state),
+        "podcast:locked" => podcast_locked::on_text(data, state),
+        "podcast:soundbite" => podcast_soundbite::on_text(data, state),
+        "podcast:person" => podcast_person::on_text(data, state),
+    
         _ => {}
     }
-
-    // Context-aware handlers
-    category::on_text(current_element, data, state);
-    podcast_funding::on_text(data, state);
-    itunes_owner::on_text(current_element, data, state);
-    podcast_locked::on_text(data, state);
-    podcast_soundbite::on_text(data, state);
-    podcast_person::on_text(data, state);
 }
 
 pub fn dispatch_end(current_element: &str, feed_id: Option<i64>, state: &mut ParserState) {
@@ -130,15 +121,12 @@ pub fn dispatch_end(current_element: &str, feed_id: Option<i64>, state: &mut Par
         "item" | "atom:entry" => item::on_end(feed_id, state),
         "image" => image::on_end(state),
         "itunes:owner" => itunes_owner::on_end(state),
-        "category" | "itunes:category" => category::on_end(current_element, state),
-        "funding" | "podcast:funding" => podcast_funding::on_end(state),
+        "podcast:alternateEnclosure" => podcast_alternate_enclosure::on_end(state),
+        "podcast:funding" => podcast_funding::on_end(state),
         "podcast:locked" | "locked" => podcast_locked::on_end(state),
-        "podcast:transcript" => podcast_transcript::on_end(feed_id, state),
-        "podcast:chapters" => podcast_chapters::on_end(feed_id, state),
         "podcast:soundbite" => podcast_soundbite::on_end(feed_id, state),
         "podcast:person" => podcast_person::on_end(feed_id, state),
         "podcast:value" => podcast_value::on_end(feed_id, state),
-        "podcast:alternateEnclosure" => state.in_podcast_alternate_enclosure = false,
         _ => {}
     }
 }

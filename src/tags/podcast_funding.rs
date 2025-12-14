@@ -3,18 +3,16 @@ use xml::attribute::OwnedAttribute;
 use crate::parser_state::ParserState;
 
 // Detect podcast:funding start; set flag and capture optional url attribute
-pub fn on_start(current_element: &str, attributes: &[OwnedAttribute], state: &mut ParserState) {
-    if current_element.starts_with("podcast:funding") {
-        if state.in_item {
-            state.in_podcast_funding = true;
-            if let Some(attr) = attributes.iter().find(|a| a.name.local_name == "url") {
-                state.podcast_funding_url = attr.value.clone();
-            }
-        } else if state.in_channel {
-            state.in_channel_podcast_funding = true;
-            if let Some(attr) = attributes.iter().find(|a| a.name.local_name == "url") {
-                state.channel_podcast_funding_url = attr.value.clone();
-            }
+pub fn on_start(attributes: &[OwnedAttribute], state: &mut ParserState) {
+    if state.in_item {
+        state.in_podcast_funding = true;
+        if let Some(attr) = attributes.iter().find(|a| a.name.local_name == "url") {
+            state.podcast_funding_url = attr.value.clone();
+        }
+    } else if state.in_channel {
+        state.in_channel_podcast_funding = true;
+        if let Some(attr) = attributes.iter().find(|a| a.name.local_name == "url") {
+            state.channel_podcast_funding_url = attr.value.clone();
         }
     }
 }

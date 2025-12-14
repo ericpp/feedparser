@@ -4,11 +4,7 @@ use crate::parser_state::ParserState;
 
 // Handle both channel- and item-level itunes:image elements, supporting the
 // common href/url attribute as well as text content fallback.
-pub fn on_start(current_element: &str, attributes: &[OwnedAttribute], state: &mut ParserState) {
-    if !current_element.starts_with("itunes:image") {
-        return;
-    }
-
+pub fn on_start(attributes: &[OwnedAttribute], state: &mut ParserState) {
     if let Some(attr) = attributes.iter().find(|a| {
         let key = a.name.local_name.as_str();
         key == "href" || key == "url"

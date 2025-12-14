@@ -33,15 +33,11 @@ pub fn on_start(state: &mut ParserState) {
     state.podcast_funding_text.clear();
     state.in_podcast_funding = false;
 
-    state.in_podcast_transcript = false;
-    state.current_transcript_url.clear();
-    state.current_transcript_type.clear();
-
-    state.in_podcast_chapters = false;
-    state.current_chapter_url.clear();
-    state.current_chapter_type.clear();
+    state.podcast_transcripts.clear();
+    state.podcast_chapters.clear();
 
     state.in_podcast_soundbite = false;
+    state.podcast_soundbites.clear();
     state.current_soundbite_title.clear();
     state.current_soundbite_start.clear();
     state.current_soundbite_duration.clear();
@@ -84,10 +80,6 @@ pub fn on_end(feed_id: Option<i64>, state: &mut ParserState) {
 
     outputs::write_nfitems(state, feed_id);
 
-    if let Some((value_type, block)) = state.item_value_pending.take() {
-        outputs::write_nfitem_value_from_block(state, feed_id, value_type, &block);
-    }
-
     state.item_pubdates.push(state.pub_date);
     state.item_count += 1;
 
@@ -99,21 +91,6 @@ pub fn on_end(feed_id: Option<i64>, state: &mut ParserState) {
         Some(v) if v <= state.pub_date => {}
         _ => state.oldest_item_pubdate = Some(state.pub_date),
     }
-
-    let hash_title = if !state.itunes_title.trim().is_empty() {
-        state.itunes_title.trim()
-    } else {
-        state.title.trim()
-    };
-
-    state.item_hash.consume(hash_title.as_bytes());
-    state.item_hash.consume(state.link.trim().as_bytes());
-    state.item_hash.consume(state.enclosure_url.trim().as_bytes());
-    state.item_hash.consume(state.enclosure_type.trim().as_bytes());
-    state.item_hash.consume(state.podcast_funding_url.trim().as_bytes());
-    state.item_hash.consume(state.podcast_funding_text.trim().as_bytes());
-    state.item_hash.consume(state.current_transcript_url.trim().as_bytes());
-    state.item_hash.consume(state.current_transcript_type.trim().as_bytes());
 
     state.in_item = false;
 }

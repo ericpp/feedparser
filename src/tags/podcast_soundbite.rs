@@ -1,6 +1,6 @@
 use xml::attribute::OwnedAttribute;
 
-use crate::{outputs, parser_state::ParserState};
+use crate::{parser_state::ParserState, parser_state::PodcastSoundbite};
 
 pub fn on_start(attributes: &[OwnedAttribute], state: &mut ParserState) {
     if !state.in_item {
@@ -27,22 +27,14 @@ pub fn on_text(data: &str, state: &mut ParserState) {
     }
 }
 
-pub fn on_end(feed_id: Option<i64>, state: &mut ParserState) {
+pub fn on_end(_feed_id: Option<i64>, state: &mut ParserState) {
     if state.in_podcast_soundbite {
         state.in_podcast_soundbite = false;
-        // Only write soundbite if item has a valid enclosure
-        if state.item_has_valid_enclosure {
-            state
-                .item_hash
-                .consume(state.current_soundbite_title.trim().as_bytes());
-            state
-                .item_hash
-                .consume(state.current_soundbite_start.trim().as_bytes());
-            state
-                .item_hash
-                .consume(state.current_soundbite_duration.trim().as_bytes());
-            outputs::write_nfitem_soundbites(state, feed_id);
-        }
+
+        state.podcast_soundbites.push(PodcastSoundbite {
+            title: state.current_soundbite_title.clone(),
+            start: state.current_soundbite_start.clone(),
+            duration: state.current_soundbite_duration.clone(),
+        });
     }
 }
-

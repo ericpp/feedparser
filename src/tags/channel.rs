@@ -29,11 +29,13 @@ pub fn on_start(state: &mut ParserState) {
     state.channel_podcast_funding_text.clear();
     state.channel_pubsub_hub_url.clear();
     state.channel_pubsub_self_url.clear();
-    state.channel_categories.clear();
-    state.channel_categories_raw.clear();
-    state.in_standard_category = false;
-    state.channel_value_pending = None;
-    state.channel_value_has_lightning = false;
+    state.channel_itunes_categories.clear();
+    state.in_channel_podcast_value = false;
+    state.channel_podcast_values.clear();
+    state.channel_value_recipients.clear();
+    state.channel_value_model_type.clear();
+    state.channel_value_model_method.clear();
+    state.channel_value_model_suggested.clear();
     state.item_pubdates.clear();
     state.item_count = 0;
     state.newest_item_pubdate = None;
@@ -45,13 +47,6 @@ pub fn on_start(state: &mut ParserState) {
 pub fn on_end(feed_id: Option<i64>, state: &mut ParserState) {
     if state.in_channel {
         outputs::write_newsfeeds(state, feed_id);
-        outputs::write_nfguids(state, feed_id);
-        outputs::write_pubsub(state, feed_id);
-        outputs::write_nffunding(state, feed_id);
-        outputs::write_nfcategories(state, feed_id);
-        if let Some((value_type, block)) = state.channel_value_pending.take() {
-            outputs::write_nfvalue_from_block(state, feed_id, value_type, &block);
-        }
         state.in_channel = false;
     }
 }

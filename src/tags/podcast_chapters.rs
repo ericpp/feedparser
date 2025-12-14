@@ -1,38 +1,27 @@
 use xml::attribute::OwnedAttribute;
 
-use crate::{outputs, parser_state::ParserState};
+use crate::parser_state::{ParserState, PodcastChapter};
 
 pub fn on_start(attributes: &[OwnedAttribute], state: &mut ParserState) {
     if !state.in_item || state.in_podcast_alternate_enclosure {
         return;
     }
 
-    state.in_podcast_chapters = true;
-    state.current_chapter_url.clear();
-    state.current_chapter_type.clear();
+
+    let mut chapter_url = String::new();
+    let mut chapter_type = String::new();
 
     for attr in attributes {
         match attr.name.local_name.as_str() {
-            "url" => state.current_chapter_url = attr.value.clone(),
-            "type" => state.current_chapter_type = attr.value.clone(),
+            "url" => chapter_url = attr.value.clone(),
+            "type" => chapter_type = attr.value.clone(),
             _ => {}
         }
     }
-}
 
-pub fn on_end(feed_id: Option<i64>, state: &mut ParserState) {
-    if state.in_podcast_chapters {
-        state.in_podcast_chapters = false;
-        // Only write chapters if item has a valid enclosure
-        if state.item_has_valid_enclosure {
-            state
-                .item_hash
-                .consume(state.current_chapter_url.trim().as_bytes());
-            state
-                .item_hash
-                .consume(state.current_chapter_type.trim().as_bytes());
-            outputs::write_nfitem_chapters(state, feed_id);
-        }
-    }
+    state.podcast_chapters.push(PodcastChapter {
+        url: chapter_url,
+        r#type: chapter_type,
+    });
 }
 

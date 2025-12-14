@@ -108,6 +108,13 @@ pub fn write_newsfeeds(state: &ParserState, feed_id: Option<i64>) {
     let oldest_pub_date: i64 = past_pub_dates.iter().min().copied().unwrap_or(0);
     let update_frequency: i32 = utils::calculate_update_frequency(&past_pub_dates);
 
+
+    // get the first lightning value block
+    let podcast_value = state.channel_podcast_values
+        .iter()
+        .find(|value| value.model.r#type == "lightning")
+        .cloned();
+
     let record = SqlInsert {
         table: "newsfeeds".to_string(),
         columns: vec![
@@ -117,22 +124,28 @@ pub fn write_newsfeeds(state: &ParserState, feed_id: Option<i64>) {
             "link".to_string(),
             "description".to_string(),
             "generator".to_string(),
+            "explicit".to_string(),
+            "image".to_string(),
+            "language".to_string(),
             "itunes_author".to_string(),
             "itunes_owner_name".to_string(),
             "itunes_owner_email".to_string(),
             "itunes_new_feed_url".to_string(),
-            "explicit".to_string(),
-            "image".to_string(),
             "itunes_image".to_string(),
             "itunes_type".to_string(),
-            "language".to_string(),
-            "item_count".to_string(),
-            "podcast_locked".to_string(),
-            "podcast_owner".to_string(),
-            "pub_date".to_string(),
+            "itunes_categories".to_string(),
             "podcast_guid".to_string(),
+            "podcast_funding_url".to_string(),
+            "podcast_funding_text".to_string(),
+            "podcast_locked".to_string(),
+            "podcast_value".to_string(),
+            "podcast_owner".to_string(),
+            "pubsub_hub_url".to_string(),
+            "pubsub_self_url".to_string(),
+            "pub_date".to_string(),
             "newest_item_pub_date".to_string(),
             "oldest_item_pub_date".to_string(),
+            "item_count".to_string(),
             "update_frequency".to_string(),
         ],
         values: vec![
@@ -142,22 +155,28 @@ pub fn write_newsfeeds(state: &ParserState, feed_id: Option<i64>) {
             JsonValue::from(link),
             JsonValue::from(description),
             JsonValue::from(state.channel_generator.clone()),
+            JsonValue::from(state.channel_explicit.clone()),
+            JsonValue::from(image),
+            JsonValue::from(language),
             JsonValue::from(state.channel_itunes_author.clone()),
             JsonValue::from(state.channel_itunes_owner_name.clone()),
             JsonValue::from(state.channel_itunes_owner_email.clone()),
             JsonValue::from(itunes_new_feed_url),
-            JsonValue::from(state.channel_explicit.clone()),
-            JsonValue::from(image),
             JsonValue::from(itunes_image),
             JsonValue::from(state.channel_itunes_type.clone()),
-            JsonValue::from(language),
-            JsonValue::from(item_count),
-            JsonValue::from(state.channel_podcast_locked.clone()),
-            JsonValue::from(podcast_owner),
-            JsonValue::from(state.channel_pub_date.clone()),
+            JsonValue::from(state.channel_itunes_categories.clone()),
             JsonValue::from(state.channel_podcast_guid.clone()),
+            JsonValue::from(state.channel_podcast_funding_url.clone()),
+            JsonValue::from(state.channel_podcast_funding_text.clone()),
+            JsonValue::from(state.channel_podcast_locked.clone()),
+            serde_json::to_value(&podcast_value).unwrap_or(JsonValue::Null),
+            JsonValue::from(podcast_owner),
+            JsonValue::from(state.channel_pubsub_hub_url.clone()),
+            JsonValue::from(state.channel_pubsub_self_url.clone()),
+            JsonValue::from(state.channel_pub_date.clone()),
             JsonValue::from(newest_pub_date),
             JsonValue::from(oldest_pub_date),
+            JsonValue::from(item_count),
             JsonValue::from(update_frequency),
         ],
         feed_id,
@@ -168,7 +187,7 @@ pub fn write_newsfeeds(state: &ParserState, feed_id: Option<i64>) {
 pub fn write_nfitems(state: &ParserState, feed_id: Option<i64>) {
     let title = utils::truncate_string(
         if !state.itunes_title.is_empty() {
-            &state.itunes_title.trim()
+            &state.itunes_title
         } else {
             &state.title.trim()
         },
@@ -234,10 +253,11 @@ pub fn write_nfitems(state: &ParserState, feed_id: Option<i64>) {
         utils::sanitize_url(&state.item_image)
     };
 
-
-//Set a time in the feed obj to use as the "lastupdate" time
-// state.last_update = now_ts();
-
+    // get the first lightning value block
+    let podcast_value = state.podcast_values
+        .iter()
+        .find(|value| value.model.r#type == "lightning")
+        .cloned();
 
     let record = SqlInsert {
         table: "nfitems".to_string(),
@@ -256,6 +276,11 @@ pub fn write_nfitems(state: &ParserState, feed_id: Option<i64>) {
             "itunes_duration".to_string(),
             "image".to_string(),
             "itunes_season".to_string(),
+            "podcast_transcripts".to_string(),
+            "podcast_chapters".to_string(),
+            "podcast_soundbites".to_string(),
+            "podcast_persons".to_string(),
+            "podcast_values".to_string(),
         ],
         values: vec![
             JsonValue::from(title),
@@ -272,272 +297,13 @@ pub fn write_nfitems(state: &ParserState, feed_id: Option<i64>) {
             JsonValue::from(state.itunes_duration),
             JsonValue::from(image),
             JsonValue::from(itunes_season),
+            serde_json::to_value(&state.podcast_transcripts).unwrap_or(JsonValue::Null),
+            serde_json::to_value(&state.podcast_chapters).unwrap_or(JsonValue::Null),
+            serde_json::to_value(&state.podcast_soundbites).unwrap_or(JsonValue::Null),
+            serde_json::to_value(&state.podcast_persons).unwrap_or(JsonValue::Null),
+            serde_json::to_value(&podcast_value).unwrap_or(JsonValue::Null),
         ],
         feed_id,
     };
     write_record(&record, "nfitems");
-}
-
-pub fn write_nfguids(state: &ParserState, feed_id: Option<i64>) {
-    let guid = &state.channel_podcast_guid;
-    if guid.is_empty() {
-        return;
-    }
-
-    let record = SqlInsert {
-        table: "nfguids".to_string(),
-        columns: vec!["feedid".to_string(), "guid".to_string()],
-        values: vec![
-            match feed_id { Some(v) => JsonValue::from(v), None => JsonValue::Null },
-            JsonValue::from(guid.to_string()),
-        ],
-        feed_id,
-    };
-
-    write_record(&record, "nfguids");
-}
-
-pub fn write_pubsub(state: &ParserState, feed_id: Option<i64>) {
-    if state.channel_pubsub_hub_url.is_empty() && state.channel_pubsub_self_url.is_empty() {
-        return;
-    }
-
-    let record = SqlInsert {
-        table: "pubsub".to_string(),
-        columns: vec![
-            "feedid".to_string(),
-            "hub_url".to_string(),
-            "self_url".to_string(),
-        ],
-        values: vec![
-            match feed_id { Some(v) => JsonValue::from(v), None => JsonValue::Null },
-            JsonValue::from(state.channel_pubsub_hub_url.to_string()),
-            JsonValue::from(state.channel_pubsub_self_url.to_string()),
-        ],
-        feed_id,
-    };
-
-    write_record(&record, "pubsub");
-}
-
-pub fn write_nffunding(state: &ParserState, feed_id: Option<i64>) {
-    if state.channel_podcast_funding_url.is_empty() {
-        return;
-    }
-
-    let record = SqlInsert {
-        table: "nffunding".to_string(),
-        columns: vec![
-            "feedid".to_string(),
-            "url".to_string(),
-            "message".to_string(),
-        ],
-        values: vec![
-            match feed_id { Some(v) => JsonValue::from(v), None => JsonValue::Null },
-            JsonValue::from(state.channel_podcast_funding_url.to_string()),
-            JsonValue::from(state.channel_podcast_funding_text.to_string()),
-        ],
-        feed_id,
-    };
-
-    write_record(&record, "nffunding");
-}
-
-pub fn write_nfcategories(state: &ParserState, feed_id: Option<i64>) {
-return;
-    if state.channel_categories_raw.is_empty() {
-        return;
-    }
-
-    let mut raw = state.channel_categories_raw.clone();
-    raw.dedup();
-
-    let record = SqlInsert {
-        table: "nfcategories".to_string(),
-        columns: vec![
-            "feedid".to_string(),
-            "catid1".to_string(),
-            "catid2".to_string(),
-            "catid3".to_string(),
-            "catid4".to_string(),
-            "catid5".to_string(),
-            "catid6".to_string(),
-            "catid7".to_string(),
-            "catid8".to_string(),
-            "catid9".to_string(),
-            "catid10".to_string(),
-        ],
-        values: vec![
-            match feed_id { Some(v) => JsonValue::from(v), None => JsonValue::Null },
-            JsonValue::from(raw[1].clone()),
-            JsonValue::from(raw[2].clone()),
-            JsonValue::from(raw[3].clone()),
-            JsonValue::from(raw[4].clone()),
-            JsonValue::from(raw[5].clone()),
-            JsonValue::from(raw[6].clone()),
-            JsonValue::from(raw[7].clone()),
-            JsonValue::from(raw[8].clone()),
-            JsonValue::from(raw[9].clone()),
-            JsonValue::from(raw[10].clone()),
-        ],
-        feed_id,
-    };
-
-    write_record(&record, "nfcategories");
-}
-
-pub fn write_nfitem_transcript(state: &ParserState, feed_id: Option<i64>) {
-    if state.current_transcript_url.is_empty() {
-        return;
-    }
-
-    let item_id = format!("{}_{}", feed_id.unwrap_or(0), state.item_count + 1);
-
-    let record = SqlInsert {
-        table: "nfitem_transcripts".to_string(),
-        columns: vec![
-            "itemid".to_string(),
-            "url".to_string(),
-            "type".to_string(),
-        ],
-        values: vec![
-            JsonValue::from(item_id),
-            JsonValue::from(state.current_transcript_url.clone()),
-            JsonValue::from(state.current_transcript_type.clone()),
-        ],
-        feed_id,
-    };
-
-    write_record(&record, "nfitem_transcripts");
-}
-
-pub fn write_nfitem_chapters(state: &ParserState, feed_id: Option<i64>) {
-    if state.current_chapter_url.is_empty() {
-        return;
-    }
-
-    let item_id = format!("{}_{}", feed_id.unwrap_or(0), state.item_count + 1);
-
-    let record = SqlInsert {
-        table: "nfitem_chapters".to_string(),
-        columns: vec![
-            "itemid".to_string(),
-            "url".to_string(),
-            "type".to_string(),
-        ],
-        values: vec![
-            JsonValue::from(item_id),
-            JsonValue::from(state.current_chapter_url.clone()),
-            JsonValue::from(state.current_chapter_type.clone()),
-        ],
-        feed_id,
-    };
-
-    write_record(&record, "nfitem_chapters");
-}
-
-pub fn write_nfitem_soundbites(state: &ParserState, feed_id: Option<i64>) {
-    if state.current_soundbite_start.is_empty() || state.current_soundbite_duration.is_empty() {
-        return;
-    }
-
-    let item_id = format!("{}_{}", feed_id.unwrap_or(0), state.item_count + 1);
-
-    let record = SqlInsert {
-        table: "nfitem_soundbites".to_string(),
-        columns: vec![
-            "itemid".to_string(),
-            "title".to_string(),
-            "start_time".to_string(),
-            "duration".to_string(),
-        ],
-        values: vec![
-            JsonValue::from(item_id),
-            JsonValue::from(state.current_soundbite_title.clone()),
-            JsonValue::from(state.current_soundbite_start.clone()),
-            JsonValue::from(state.current_soundbite_duration.clone()),
-        ],
-        feed_id,
-    };
-
-    write_record(&record, "nfitem_soundbites");
-}
-
-pub fn write_nfitem_persons(state: &ParserState, feed_id: Option<i64>) {
-    if state.current_person_name.is_empty() {
-        return;
-    }
-    let item_id = format!("{}_{}", feed_id.unwrap_or(0), state.item_count + 1);
-
-    let record = SqlInsert {
-        table: "nfitem_persons".to_string(),
-        columns: vec![
-            "itemid".to_string(),
-            "name".to_string(),
-            "role".to_string(),
-            "grp".to_string(),
-            "img".to_string(),
-            "href".to_string(),
-        ],
-        values: vec![
-            JsonValue::from(item_id),
-            JsonValue::from(state.current_person_name.clone()),
-            JsonValue::from(state.current_person_role.clone()),
-            JsonValue::from(state.current_person_group.clone()),
-            JsonValue::from(state.current_person_img.clone()),
-            JsonValue::from(state.current_person_href.clone()),
-        ],
-        feed_id,
-    };
-
-    write_record(&record, "nfitem_persons");
-}
-
-pub fn write_nfvalue_from_block(state: &ParserState, feed_id: Option<i64>, value_type: i32, block: &str) {
-    let created_on = feed_run_ts(state);
-
-    let record = SqlInsert {
-        table: "nfvalue".to_string(),
-        columns: vec![
-            "feedid".to_string(),
-            "value_block".to_string(),
-            "type".to_string(),
-            "createdon".to_string(),
-        ],
-        values: vec![
-            match feed_id { Some(v) => JsonValue::from(v), None => JsonValue::Null },
-            JsonValue::from(block.to_string()),
-            JsonValue::from(value_type),
-            JsonValue::from(created_on),
-        ],
-        feed_id,
-    };
-
-    write_record(&record, "nfvalue");
-}
-
-pub fn write_nfitem_value_from_block(
-    state: &ParserState,
-    feed_id: Option<i64>,
-    value_type: i32,
-    block: &str,
-) {
-    let item_id = format!("{}_{}", feed_id.unwrap_or(0), state.item_count + 1);
-
-    let record = SqlInsert {
-        table: "nfitem_value".to_string(),
-        columns: vec![
-            "itemid".to_string(),
-            "value_block".to_string(),
-            "type".to_string(),
-        ],
-        values: vec![
-            JsonValue::from(item_id),
-            JsonValue::from(block.to_string()),
-            JsonValue::from(value_type),
-        ],
-        feed_id,
-    };
-
-    write_record(&record, "nfitem_value");
 }
