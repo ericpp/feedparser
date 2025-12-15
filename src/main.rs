@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::OnceLock;
 use std::path::{PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH, Instant};
-use xml::reader::{EventReader, XmlEvent};
+use xml::reader::{XmlEvent, ParserConfig};
 use xml::name::OwnedName;
 
 mod parser_state;
@@ -13,7 +13,7 @@ mod tags;
 mod outputs;
 #[cfg(test)]
 mod tests;
-
+mod utils;
 use parser_state::ParserState;
 
 // Global counter initialized to zero at program start
@@ -178,7 +178,9 @@ fn process_feed_sync<R: Read>(reader: R, _source_name: &str, feed_id: Option<i64
 
     // Create an XML parser from the buffered payload
     let cursor = Cursor::new(xml_bytes);
-    let parser = EventReader::new(cursor);
+    let config = ParserConfig::new();
+    let config = utils::add_html_entities_to_parser_config(config);
+    let parser = config.create_reader(cursor);
 
     // Parser state holds all flags and accumulators used by handlers
     let mut state = ParserState::default();
